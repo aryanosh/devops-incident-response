@@ -20,3 +20,6 @@ app = create_app(
     IncidentObservation,       # Observation type
     env_name="devops-incident-env",
 )
+@app.get("/")
+def root():
+    return {"message": "DevOps Incident Response Environment is running"}
