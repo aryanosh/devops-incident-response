@@ -1,16 +1,10 @@
 ---
-title: DevOps Incident Response Environment
+title: DevOps Incident Response OpenEnv
 emoji: 🔧
-colorFrom: red
-colorTo: yellow
+colorFrom: blue
+colorTo: green
 sdk: docker
-pinned: false
 app_port: 8000
-base_path: /web
-tags:
-  - openenv
-  - devops
-  - incident-response
 ---
 
 # DevOps Incident Response - OpenEnv Environment
@@ -133,6 +127,14 @@ blind fixes. It combines:
 The environment also provides dense intermediate rewards for productive steps such
 as reading logs, querying metrics, making a correct diagnosis, applying the right
 fix, and verifying health.
+
+## Key Features
+
+- Verification-aware resolution: incidents require explicit post-fix health checks
+- Dependency-aware root cause tracing across a microservice graph
+- Dense reward shaping with partial credit for productive investigation
+- Safety penalties for blind fixes and destructive actions
+- Realistic cascading failure behavior across multiple services
 
 ## Setup
 

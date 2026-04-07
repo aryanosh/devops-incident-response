@@ -351,7 +351,6 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
             done=done,
         )
 
-    @property
     def state(self) -> IncidentState:
         self._sync_state_tracking()
         return self._state
