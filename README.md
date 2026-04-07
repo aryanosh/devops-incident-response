@@ -1,5 +1,5 @@
 ---
-title: DevOps Incident Response OpenEnv
+Title: DevOps Incident Response OpenEnv
 emoji: 🔧
 colorFrom: blue
 colorTo: green
