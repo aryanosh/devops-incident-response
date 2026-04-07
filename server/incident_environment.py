@@ -173,19 +173,18 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
             
         elif action.action_type == "apply_fix":
             action_result, success, message = self._handle_apply_fix(action)
-            if action.service == "api_gateway":
-                self._state.service_status_overrides["api_gateway"] = "healthy"
+            if success:
+                self._state.service_status_overrides[action.service] = "healthy"
                 reward += 0.5
             
         elif action.action_type == "verify_health":
             action_result = self._handle_verify_health(action.service)
-            api_gateway_status = self._get_service_status("api_gateway")
-            if api_gateway_status == "healthy":
+            service_status = self._get_service_status(action.service)
+            if service_status == "healthy":
                 if action.service not in self._state.verified_healthy_services:
                     self._state.verified_healthy_services.append(action.service)
-                self._state.is_resolved = True
                 reward += 1.0
-                done = True
+                done = self._is_episode_done()
             
         else:
             action_result = f"Unknown action type: {action.action_type}"

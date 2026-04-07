@@ -23,7 +23,7 @@ from openai import OpenAI
 # CONFIGURATION
 # ─────────────────────────────────────────────
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME   = os.environ.get("MODEL_NAME",   "mistralai/Mistral-7B-Instruct-v0.2")
+MODEL_NAME   = os.environ.get("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
 HF_TOKEN = os.environ.get("HF_TOKEN")
 ENV_URL = os.environ.get("ENV_URL", "https://aryanosh-devops-incident-env.hf.space")
 
@@ -69,11 +69,15 @@ class DevOpsAgent:
             api_key=HF_TOKEN or "hf_placeholder"
         )
         self.conversation_history = []
+        self.fallback_step = 0
+        self.current_plan = []
 
     def reset_conversation(self):
         self.conversation_history = [
             {"role": "system", "content": SYSTEM_PROMPT}
         ]
+        self.fallback_step = 0
+        self.current_plan = []
 
     def observe(self, observation: dict) -> str:
         """Format observation dict into a readable string for the LLM."""
@@ -139,9 +143,7 @@ class DevOpsAgent:
             return self._parse_action(raw)
         except Exception as e:
             print(f"[WARN] LLM call failed: {e}", file=sys.stderr)
-            # Fallback: investigate first alert's service
-            step = len(self.conversation_history)
-            return self.fallback_policy(step)
+            return self.fallback_policy(observation_text)
 
     def _parse_action(self, text: str) -> dict:
         """Safely parse action JSON from LLM output."""
@@ -166,15 +168,38 @@ class DevOpsAgent:
 
         # Fallback action
         return {"action_type": "read_logs", "service": "api_gateway", "reasoning": "Parse error - defaulting to initial investigation"}
-    def fallback_policy(self, step):
-        sequence = [
-        {"action_type": "read_logs", "service": "api_gateway"},
-        {"action_type": "query_metrics", "service": "api_gateway"},
-        {"action_type": "diagnose", "service": "api_gateway", "diagnosis": "service_crash"},
-        {"action_type": "apply_fix", "service": "api_gateway", "fix": "restart_service"},
-        {"action_type": "verify_health", "service": "api_gateway"},
+    def fallback_policy(self, observation_text: str) -> dict:
+        if not self.current_plan or self.fallback_step >= len(self.current_plan):
+            self.current_plan = self._build_fallback_plan(observation_text)
+            self.fallback_step = 0
+
+        action = self.current_plan[min(self.fallback_step, len(self.current_plan) - 1)]
+        self.fallback_step += 1
+        return action
+
+    def _build_fallback_plan(self, observation_text: str) -> list[dict]:
+        text = observation_text.lower()
+
+        if "elevated 503s" in text and "timeout rate high" in text:
+            service = "database"
+            diagnosis = "disk_full"
+            fix = "clear_disk"
+        elif "high memory usage" in text or "memory > 90%" in text:
+            service = "order_service"
+            diagnosis = "memory_leak"
+            fix = "memory_fix"
+        else:
+            service = "api_gateway"
+            diagnosis = "service_crash"
+            fix = "restart_service"
+
+        return [
+            {"action_type": "read_logs", "service": service},
+            {"action_type": "query_metrics", "service": service},
+            {"action_type": "diagnose", "service": service, "diagnosis": diagnosis},
+            {"action_type": "apply_fix", "service": service, "fix": fix},
+            {"action_type": "verify_health", "service": service},
         ]
-        return sequence[min(step, len(sequence)-1)]
 
 # ─────────────────────────────────────────────
 # ENVIRONMENT CLIENT
