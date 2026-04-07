@@ -4,26 +4,26 @@
 # DevOps Incident Response - Inference Script
 # Meta PyTorch OpenEnv Hackathon | MANDATORY SUBMISSION FILE
 # ============================================================
-# REQUIRED ENV VARS:
-#   API_BASE_URL  - LLM API endpoint
-#   MODEL_NAME    - Model identifier
-#   HF_TOKEN      - Hugging Face token
-#   ENV_URL       - Your HF Space URL (default: http://localhost:8000)
-# ============================================================
 
+import json
 import os
 import sys
-import json
 import time
 import uuid
+
 import requests
 from openai import OpenAI
 
-# ─────────────────────────────────────────────
-# CONFIGURATION
-# ─────────────────────────────────────────────
+try:
+    from .client import DevOpsIncidentEnv
+    from .models import IncidentAction
+except ImportError:
+    from client import DevOpsIncidentEnv
+    from models import IncidentAction
+
+
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME   = os.environ.get("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
+MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
 HF_TOKEN = os.environ.get("HF_TOKEN")
 ENV_URL = os.environ.get("ENV_URL", "https://aryanosh-devops-incident-env.hf.space")
 
@@ -51,64 +51,56 @@ Strategy:
 4. Apply the appropriate fix
 5. Verify health to confirm recovery
 
-Service dependency chain: api_gateway → auth_service → user_service → database
-                          api_gateway → order_service → payment_service → database
-
 IMPORTANT: Respond with ONLY the JSON action object, nothing else."""
 
 
-# ─────────────────────────────────────────────
-# AGENT CLASS
-# ─────────────────────────────────────────────
 class DevOpsAgent:
     def __init__(self):
         if not HF_TOKEN:
             print("[WARN] HF_TOKEN not set. Using unauthenticated access.", file=sys.stderr)
         self.client = OpenAI(
             base_url=API_BASE_URL,
-            api_key=HF_TOKEN or "hf_placeholder"
+            api_key=HF_TOKEN or "hf_placeholder",
         )
         self.conversation_history = []
         self.fallback_step = 0
         self.current_plan = []
 
     def reset_conversation(self):
-        self.conversation_history = [
-            {"role": "system", "content": SYSTEM_PROMPT}
-        ]
+        self.conversation_history = [{"role": "system", "content": SYSTEM_PROMPT}]
         self.fallback_step = 0
         self.current_plan = []
 
     def observe(self, observation: dict) -> str:
-        """Format observation dict into a readable string for the LLM."""
-        parts = []
+        parts = [f"[Step {observation.get('step_number', '?')}/{observation.get('max_steps', '?')}]"]
 
-        # Step progress
-        parts.append(f"[Step {observation.get('step_number', '?')}/{observation.get('max_steps', '?')}]")
-
-        # Action result
         if observation.get("action_result"):
             parts.append(f"ACTION RESULT: {observation['action_result']}")
 
-        # Active alerts
         alerts = observation.get("active_alerts", [])
         if alerts:
-            alert_strs = [f"  [{a['severity'].upper()}] {a['service']}: {a['title']}" for a in alerts]
-            parts.append("ACTIVE ALERTS:\n" + "\n".join(alert_strs))
+            parts.append(
+                "ACTIVE ALERTS:\n" + "\n".join(
+                    f"  [{a['severity'].upper()}] {a['service']}: {a['title']}" for a in alerts
+                )
+            )
 
-        # Service summaries
         summaries = observation.get("service_summaries", [])
         if summaries:
-            sum_strs = [f"  {s['service_name']}: {s['status']}" for s in summaries]
-            parts.append("SERVICE STATUS:\n" + "\n".join(sum_strs))
+            parts.append(
+                "SERVICE STATUS:\n" + "\n".join(
+                    f"  {s['service_name']}: {s['status']}" for s in summaries
+                )
+            )
 
-        # Logs
         logs = observation.get("logs", [])
         if logs:
-            log_strs = [f"  [{l['timestamp']}] [{l['level']}] {l['service']}: {l['message']}" for l in logs]
-            parts.append("LOGS:\n" + "\n".join(log_strs))
+            parts.append(
+                "LOGS:\n" + "\n".join(
+                    f"  [{l['timestamp']}] [{l['level']}] {l['service']}: {l['message']}" for l in logs
+                )
+            )
 
-        # Metrics
         metrics = observation.get("metrics")
         if metrics:
             parts.append(
@@ -118,18 +110,13 @@ class DevOpsAgent:
                 f"  Status: {metrics['status']}"
             )
 
-        # Message
         if observation.get("message"):
             parts.append(f"SYSTEM: {observation['message']}")
 
         return "\n\n".join(parts)
 
     def act(self, observation_text: str) -> dict:
-        """Call LLM and parse JSON action."""
-        self.conversation_history.append({
-            "role": "user",
-            "content": observation_text
-        })
+        self.conversation_history.append({"role": "user", "content": observation_text})
 
         try:
             response = self.client.chat.completions.create(
@@ -140,14 +127,15 @@ class DevOpsAgent:
             )
             raw = response.choices[0].message.content.strip()
             self.conversation_history.append({"role": "assistant", "content": raw})
-            return self._parse_action(raw)
+            parsed = self._parse_action(raw)
+            if parsed is not None:
+                return parsed
         except Exception as e:
             print(f"[WARN] LLM call failed: {e}", file=sys.stderr)
-            return self.fallback_policy(observation_text)
 
-    def _parse_action(self, text: str) -> dict:
-        """Safely parse action JSON from LLM output."""
-        # Try direct parse
+        return self.fallback_policy(observation_text)
+
+    def _parse_action(self, text: str) -> dict | None:
         try:
             obj = json.loads(text)
             if "action_type" in obj and "service" in obj:
@@ -155,25 +143,26 @@ class DevOpsAgent:
         except json.JSONDecodeError:
             pass
 
-        # Find JSON block in text
         import re
-        match = re.search(r'\{[^{}]+\}', text, re.DOTALL)
-        if match:
-            try:
-                obj = json.loads(match.group())
-                if "action_type" in obj and "service" in obj:
-                    return obj
-            except json.JSONDecodeError:
-                pass
 
-        # Fallback action
-        return {"action_type": "read_logs", "service": "api_gateway", "reasoning": "Parse error - defaulting to initial investigation"}
+        match = re.search(r"\{[^{}]+\}", text, re.DOTALL)
+        if not match:
+            return None
+
+        try:
+            obj = json.loads(match.group())
+            if "action_type" in obj and "service" in obj:
+                return obj
+        except json.JSONDecodeError:
+            return None
+        return None
+
     def fallback_policy(self, observation_text: str) -> dict:
         if not self.current_plan or self.fallback_step >= len(self.current_plan):
             self.current_plan = self._build_fallback_plan(observation_text)
             self.fallback_step = 0
 
-        action = self.current_plan[min(self.fallback_step, len(self.current_plan) - 1)]
+        action = self.current_plan[self.fallback_step]
         self.fallback_step += 1
         return action
 
@@ -201,49 +190,15 @@ class DevOpsAgent:
             {"action_type": "verify_health", "service": service},
         ]
 
-# ─────────────────────────────────────────────
-# ENVIRONMENT CLIENT
-# ─────────────────────────────────────────────
-def env_reset(task_id: str) -> dict:
-    """Call environment reset endpoint."""
-    resp = requests.post(
-        f"{ENV_URL}/reset",
-        json={"task_id": task_id},
-        timeout=30
-    )
-    resp.raise_for_status()
-    return resp.json()
 
-def env_step(action: dict) -> dict:
-    """Call environment step endpoint."""
-    resp = requests.post(
-        f"{ENV_URL}/step",
-        json={"action": action},
-        timeout=30
-    )
-    resp.raise_for_status()
-    return resp.json()
-
-def env_state() -> dict:
-    """Call environment state endpoint."""
-    resp = requests.get(f"{ENV_URL}/state", timeout=30)
-    resp.raise_for_status()
-    return resp.json()
-
-
-# ─────────────────────────────────────────────
-# TASK RUNNER
-# ─────────────────────────────────────────────
-def run_task(agent: DevOpsAgent, task_id: str) -> dict:
-    """Run one complete episode and return summary."""
+def run_task(agent: DevOpsAgent, env: DevOpsIncidentEnv, task_id: str) -> dict:
     agent.reset_conversation()
     episode_id = str(uuid.uuid4())[:8]
 
-    # ── [START] LOG ──
     print(json.dumps({"type": "[START]", "task_id": task_id, "episode_id": episode_id}), flush=True)
 
-    # Reset environment
-    obs = env_reset(task_id)
+    reset_result = env.reset(task_id=task_id)
+    obs = reset_result.observation.model_dump()
 
     step_num = 0
     final_reward = 0.0
@@ -251,72 +206,66 @@ def run_task(agent: DevOpsAgent, task_id: str) -> dict:
 
     while not done and step_num < MAX_STEPS_PER_TASK:
         step_num += 1
-
-        # Format observation for LLM
         obs_text = agent.observe(obs)
-
-        # Get action from agent
         action = agent.act(obs_text)
 
-        # Execute action in environment
         try:
-            result = env_step(action)
+            result = env.step(IncidentAction(**action))
         except Exception as e:
             print(f"[WARN] Step failed: {e}", file=sys.stderr)
             break
 
-        obs = result.get("observation", result)
-        reward = obs.get("reward", 0.0)
-        done = obs.get("done", False)
+        obs = result.observation.model_dump()
+        reward = result.reward
+        done = result.done
         final_reward = reward
 
-        # ── [STEP] LOG ──
-        print(json.dumps({
-            "type": "[STEP]",
-            "step": step_num,
-            "action": action,
-            "reward": round(reward, 4),
-            "done": done
-        }), flush=True)
+        print(
+            json.dumps(
+                {
+                    "type": "[STEP]",
+                    "step": step_num,
+                    "action": action,
+                    "reward": round(reward, 4),
+                    "done": done,
+                }
+            ),
+            flush=True,
+        )
 
-        if done:
-            break
-
-    # Get final state for resolved status
     try:
-        state = env_state()
-        resolved = state.get("is_resolved", False)
+        state = env.state()
+        resolved = getattr(state, "is_resolved", done)
     except Exception:
-        resolved = False
+        resolved = done
 
-    # ── [END] LOG ──
-    print(json.dumps({
-        "type": "[END]",
-        "task_id": task_id,
-        "episode_id": episode_id,
-        "total_steps": step_num,
-        "final_reward": round(final_reward, 4),
-        "resolved": resolved
-    }), flush=True)
+    print(
+        json.dumps(
+            {
+                "type": "[END]",
+                "task_id": task_id,
+                "episode_id": episode_id,
+                "total_steps": step_num,
+                "final_reward": round(final_reward, 4),
+                "resolved": resolved,
+            }
+        ),
+        flush=True,
+    )
 
     return {
         "task_id": task_id,
         "steps": step_num,
         "final_reward": round(final_reward, 4),
-        "resolved": resolved
+        "resolved": resolved,
     }
 
 
-# ─────────────────────────────────────────────
-# MAIN
-# ─────────────────────────────────────────────
 def main():
-    """Run all 3 tasks and print summary."""
-    print(f"[INFO] Starting DevOps Incident Response evaluation", file=sys.stderr)
+    print("[INFO] Starting DevOps Incident Response evaluation", file=sys.stderr)
     print(f"[INFO] ENV_URL: {ENV_URL}", file=sys.stderr)
     print(f"[INFO] MODEL:   {MODEL_NAME}", file=sys.stderr)
 
-    # Verify environment is running
     try:
         health = requests.get(f"{ENV_URL}/health", timeout=10)
         print(f"[INFO] Environment health: {health.status_code}", file=sys.stderr)
@@ -328,23 +277,33 @@ def main():
     results = []
     start_time = time.time()
 
-    for task_id in TASKS:
-        print(f"\n[INFO] Running task: {task_id}", file=sys.stderr)
-        try:
-            result = run_task(agent, task_id)
-            results.append(result)
-            print(f"[INFO] {task_id}: reward={result['final_reward']}, resolved={result['resolved']}", file=sys.stderr)
-        except Exception as e:
-            print(f"[ERROR] Task {task_id} failed: {e}", file=sys.stderr)
-            results.append({"task_id": task_id, "final_reward": 0.0, "resolved": False, "error": str(e)})
+    try:
+        with DevOpsIncidentEnv(base_url=ENV_URL).sync() as env:
+            for task_id in TASKS:
+                print(f"\n[INFO] Running task: {task_id}", file=sys.stderr)
+                try:
+                    result = run_task(agent, env, task_id)
+                    results.append(result)
+                    print(
+                        f"[INFO] {task_id}: reward={result['final_reward']}, resolved={result['resolved']}",
+                        file=sys.stderr,
+                    )
+                except Exception as e:
+                    print(f"[ERROR] Task {task_id} failed: {e}", file=sys.stderr)
+                    results.append(
+                        {"task_id": task_id, "final_reward": 0.0, "resolved": False, "error": str(e)}
+                    )
+    except Exception as e:
+        print(f"[ERROR] Failed to establish persistent environment session: {e}", file=sys.stderr)
+        sys.exit(1)
 
     elapsed = round(time.time() - start_time, 2)
     avg_reward = round(sum(r["final_reward"] for r in results) / len(results), 4) if results else 0.0
 
     print(f"\n[INFO] Evaluation complete in {elapsed}s", file=sys.stderr)
     print(f"[INFO] Average reward: {avg_reward}", file=sys.stderr)
-    for r in results:
-        print(f"[INFO]   {r['task_id']}: {r['final_reward']}", file=sys.stderr)
+    for result in results:
+        print(f"[INFO]   {result['task_id']}: {result['final_reward']}", file=sys.stderr)
 
     return avg_reward
 

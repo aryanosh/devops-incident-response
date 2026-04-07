@@ -42,8 +42,8 @@ class DevOpsIncidentEnv(EnvClient[IncidentAction, IncidentObservation, IncidentS
 
         return StepResult(
             observation=obs,
-            reward=obs.reward,
-            done=obs.done,
+            reward=payload.get("reward", obs.reward),
+            done=payload.get("done", obs.done),
         )
 
     def _parse_state(self, payload: dict) -> IncidentState:
