@@ -22,10 +22,10 @@ from openai import OpenAI
 # ─────────────────────────────────────────────
 # CONFIGURATION
 # ─────────────────────────────────────────────
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://api-inference.huggingface.co/v1")
-MODEL_NAME   = os.environ.get("MODEL_NAME",   "meta-llama/Llama-3.1-8B-Instruct")
-HF_TOKEN     = os.environ.get("HF_TOKEN",     "")
-ENV_URL      = os.environ.get("ENV_URL",      "http://localhost:8000")
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME   = os.environ.get("MODEL_NAME",   "mistralai/Mistral-7B-Instruct-v0.2")
+HF_TOKEN = os.environ.get("HF_TOKEN")
+ENV_URL = os.environ.get("ENV_URL", "https://aryanosh-devops-incident-env.hf.space")
 
 TASKS = ["easy_task", "medium_task", "hard_task"]
 MAX_STEPS_PER_TASK = 15
@@ -140,7 +140,8 @@ class DevOpsAgent:
         except Exception as e:
             print(f"[WARN] LLM call failed: {e}", file=sys.stderr)
             # Fallback: investigate first alert's service
-            return {"action_type": "read_logs", "service": "api_gateway"}
+            step = len(self.conversation_history)
+            return self.fallback_policy(step)
 
     def _parse_action(self, text: str) -> dict:
         """Safely parse action JSON from LLM output."""
@@ -165,7 +166,15 @@ class DevOpsAgent:
 
         # Fallback action
         return {"action_type": "read_logs", "service": "api_gateway", "reasoning": "Parse error - defaulting to initial investigation"}
-
+    def fallback_policy(self, step):
+        sequence = [
+        {"action_type": "read_logs", "service": "api_gateway"},
+        {"action_type": "query_metrics", "service": "api_gateway"},
+        {"action_type": "diagnose", "service": "api_gateway", "diagnosis": "service_crash"},
+        {"action_type": "apply_fix", "service": "api_gateway", "fix": "restart_service"},
+        {"action_type": "verify_health", "service": "api_gateway"},
+        ]
+        return sequence[min(step, len(sequence)-1)]
 
 # ─────────────────────────────────────────────
 # ENVIRONMENT CLIENT
@@ -184,7 +193,7 @@ def env_step(action: dict) -> dict:
     """Call environment step endpoint."""
     resp = requests.post(
         f"{ENV_URL}/step",
-        json=action,
+        json={"action": action},
         timeout=30
     )
     resp.raise_for_status()

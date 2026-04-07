@@ -164,6 +164,8 @@ class IncidentState(BaseModel):
     services_investigated: List[str] = Field(default_factory=list)
     diagnoses_submitted: List[Dict[str, str]] = Field(default_factory=list)
     fixes_applied: List[Dict[str, str]] = Field(default_factory=list)
+    service_status_overrides: Dict[str, str] = Field(default_factory=dict)
+    verified_healthy_services: List[str] = Field(default_factory=list)
     
     # Scoring accumulators  
     correct_diagnoses: int = 0
@@ -171,6 +173,7 @@ class IncidentState(BaseModel):
     correct_fixes_count: int = 0
     incorrect_fixes_count: int = 0
     destructive_actions: int = 0
+    bonus_reward: float = 0.0
     
     # Episode outcome
     is_resolved: bool = False

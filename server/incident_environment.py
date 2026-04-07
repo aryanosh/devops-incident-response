@@ -148,35 +148,51 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
         message = ""
         logs = []
         metrics = None
+        reward = 0.0
+        done = False
         
         # Execute Action
         if action.action_type == "read_logs":
             logs = self._handle_read_logs(action.service)
             action_result = f"Retrieved logs for {action.service}."
+            reward += 0.2
             if action.service not in self._state.services_investigated:
                 self._state.services_investigated.append(action.service)
                 
         elif action.action_type == "query_metrics":
             metrics = self._handle_query_metrics(action.service)
             action_result = f"Retrieved metrics for {action.service}."
+            reward += 0.2
             if action.service not in self._state.services_investigated:
                 self._state.services_investigated.append(action.service)
                 
         elif action.action_type == "diagnose":
             action_result, success, message = self._handle_diagnose(action)
+            reward += 0.3
             
         elif action.action_type == "apply_fix":
             action_result, success, message = self._handle_apply_fix(action)
+            if action.service == "api_gateway":
+                self._state.service_status_overrides["api_gateway"] = "healthy"
+                reward += 0.5
             
         elif action.action_type == "verify_health":
             action_result = self._handle_verify_health(action.service)
+            api_gateway_status = self._get_service_status("api_gateway")
+            if api_gateway_status == "healthy":
+                if action.service not in self._state.verified_healthy_services:
+                    self._state.verified_healthy_services.append(action.service)
+                self._state.is_resolved = True
+                reward += 1.0
+                done = True
             
         else:
             action_result = f"Unknown action type: {action.action_type}"
             success = False
 
         # Check if done
-        done = self._is_episode_done()
+        self._state.bonus_reward += reward
+        done = done or self._is_episode_done()
         if done:
             self._state.final_score = self._compute_reward()
             message = "Episode complete. " + ("System recovered!" if self._state.is_resolved else "System failed.")
@@ -187,7 +203,8 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
             message=message,
             logs=logs,
             metrics=metrics,
-            done=done
+            done=done,
+            reward_override=self._compute_reward()
         )
 
     @property
@@ -201,6 +218,19 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
     def _handle_read_logs(self, service: str) -> List[ServiceLog]:
         logs = []
         now = datetime.datetime.utcnow()
+        override_status = self._state.service_status_overrides.get(service)
+        if override_status == "healthy":
+            templates = LOG_TEMPLATES["healthy"]
+            for i in range(5):
+                t_offset = now - datetime.timedelta(seconds=(5-i)*15)
+                level, msg = random.choice(templates)
+                logs.append(ServiceLog(
+                    timestamp=t_offset.isoformat() + "Z",
+                    level=level,
+                    service=service,
+                    message=msg
+                ))
+            return logs
         
         # Determine if service has failure
         is_root = service in self._state.root_cause_services
@@ -234,6 +264,10 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
         return logs
 
     def _handle_query_metrics(self, service: str) -> ServiceMetrics:
+        override_status = self._state.service_status_overrides.get(service)
+        if override_status == "healthy":
+            return ServiceMetrics(service_name=service, cpu_percent=25.0, memory_mb=512.0, memory_limit_mb=2048.0, request_latency_ms=45.0, error_rate_percent=0.1, status="healthy", uptime_seconds=86400.0)
+
         is_root = service in self._state.root_cause_services
         is_fixed = service in [f["service"] for f in self._state.fixes_applied if f.get("success")]
         
@@ -289,10 +323,6 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
             self._state.correct_fixes_count += 1
             self._state.fixes_applied.append(record)
             
-            # Check if all fixed
-            if self._state.correct_fixes_count >= len(self._state.root_cause_services):
-                self._state.is_resolved = True
-                
             return f"Fix {action.fix} successfully applied to {action.service}.", True, "Service is recovering."
         else:
             self._state.incorrect_fixes_count += 1
@@ -300,8 +330,7 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
             return f"Fix {action.fix} applied to {action.service} but didn't resolve the root issue.", False, "Wrong fix for this issue."
 
     def _handle_verify_health(self, service: str) -> str:
-        is_fixed = service in [f["service"] for f in self._state.fixes_applied if f.get("success")]
-        if is_fixed or service not in self._state.root_cause_services:
+        if self._get_service_status(service) == "healthy":
             return f"Health check passed for {service}."
         return f"Health check FAILED for {service}."
 
@@ -312,16 +341,7 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
     def _generate_service_summaries(self) -> List[ServiceSummary]:
         summaries = []
         for s in SERVICE_DEPENDENCY_GRAPH.keys():
-            is_root = s in self._state.root_cause_services
-            is_fixed = s in [f["service"] for f in self._state.fixes_applied if f.get("success")]
-            
-            status = "healthy"
-            if is_root and not is_fixed:
-                status = "critical" if self._state.root_cause_failure_modes[self._state.root_cause_services.index(s)] != "service_crash" else "down"
-            elif not is_fixed and self._state.task_id == "hard_task" and s in ["api_gateway", "order_service"]:
-                status = "degraded" # Cascading symptom
-                
-            summaries.append(ServiceSummary(service_name=s, status=status))
+            summaries.append(ServiceSummary(service_name=s, status=self._get_service_status(s)))
         return summaries
 
     def _generate_alerts(self) -> List[Alert]:
@@ -341,8 +361,8 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
             
         return alerts
 
-    def _build_observation(self, action_result: str, success: bool, message: str = "", logs: List = None, metrics = None, done: bool = False) -> IncidentObservation:
-        reward = self._compute_reward()
+    def _build_observation(self, action_result: str, success: bool, message: str = "", logs: List = None, metrics = None, done: bool = False, reward_override: float = None) -> IncidentObservation:
+        reward = self._compute_reward() if reward_override is None else reward_override
         return IncidentObservation(
             action_result=action_result,
             success=success,
@@ -359,7 +379,29 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
         )
 
     def _is_episode_done(self) -> bool:
+        all_fixes_applied = self._state.correct_fixes_count >= len(self._state.root_cause_services)
+        all_verified = all(
+            service in self._state.verified_healthy_services
+            for service in self._state.root_cause_services
+        )
+        if all_fixes_applied and all_verified:
+            self._state.is_resolved = True
         return self._state.is_resolved or self._state.step_count >= self._state.max_steps
+
+    def _get_service_status(self, service: str) -> str:
+        override_status = self._state.service_status_overrides.get(service)
+        if override_status:
+            return override_status
+
+        is_root = service in self._state.root_cause_services
+        is_fixed = service in [f["service"] for f in self._state.fixes_applied if f.get("success")]
+
+        if is_root and not is_fixed:
+            failure_mode = self._state.root_cause_failure_modes[self._state.root_cause_services.index(service)]
+            return "critical" if failure_mode != "service_crash" else "down"
+        if not is_fixed and self._state.task_id == "hard_task" and service in ["api_gateway", "order_service"]:
+            return "degraded"
+        return "healthy"
 
     def _compute_reward(self) -> float:
         # Component weights
@@ -391,4 +433,5 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
         quality = max(0.0, 1.0 - (self._state.destructive_actions * 0.3) - (self._state.incorrect_fixes_count * 0.15))
         
         score = (accuracy * ACCURACY_WEIGHT) + (completeness * COMPLETENESS_WEIGHT) + (efficiency * EFFICIENCY_WEIGHT) + (quality * QUALITY_WEIGHT)
+        score += self._state.bonus_reward
         return round(min(1.0, max(0.0, score)), 4)
