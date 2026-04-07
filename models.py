@@ -163,7 +163,7 @@ class IncidentState(BaseModel):
     # Tracking what agent has done
     services_investigated: List[str] = Field(default_factory=list)
     diagnoses_submitted: List[Dict[str, str]] = Field(default_factory=list)
-    fixes_applied: List[Dict[str, str]] = Field(default_factory=list)
+    fixes_applied: List[Dict[str, Any]] = Field(default_factory=list)
     service_status_overrides: Dict[str, str] = Field(default_factory=dict)
     verified_healthy_services: List[str] = Field(default_factory=list)
     

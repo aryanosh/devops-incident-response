@@ -133,7 +133,8 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
         return self._build_observation(
             action_result="Incident initiated. PagerDuty alert triggered.",
             success=True,
-            message="Check the active alerts to start your investigation."
+            message="Check the active alerts to start your investigation.",
+            reward_override=0.0
         )
 
     def step(self, action: IncidentAction) -> IncidentObservation:
@@ -141,7 +142,7 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
         self._state.step_count += 1
         
         if self._state.is_resolved or self._state.step_count > self._state.max_steps:
-            return self._build_observation("Episode already finished.", False)
+            return self._build_observation("Episode already finished.", False, reward_override=0.0)
             
         action_result = ""
         success = True
@@ -204,7 +205,7 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
             logs=logs,
             metrics=metrics,
             done=done,
-            reward_override=self._compute_reward()
+            reward_override=round(reward, 4)
         )
 
     @property
