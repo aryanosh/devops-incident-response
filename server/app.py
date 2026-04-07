@@ -1,7 +1,9 @@
-# server/app.py
-# ============================================================
-# DevOps Incident Response - FastAPI Application
-# ============================================================
+"""FastAPI application for the DevOps Incident Response environment."""
+
+from __future__ import annotations
+
+import uvicorn
+from openenv.core.env_server import create_app
 
 try:
     from ..models import IncidentAction, IncidentObservation
@@ -10,16 +12,17 @@ except ImportError:
     from models import IncidentAction, IncidentObservation
     from server.incident_environment import IncidentEnvironment
 
-from openenv.core.env_server import create_app
 
-# Create the FastAPI app using OpenEnv's factory
-# Pass the CLASS (not an instance) to support concurrent sessions
 app = create_app(
-    IncidentEnvironment,       # Environment class
-    IncidentAction,            # Action type
-    IncidentObservation,       # Observation type
-    env_name="devops-incident-env",
+    IncidentEnvironment,
+    IncidentAction,
+    IncidentObservation,
+    env_name="devops-incident-response",
+    max_concurrent_envs=4,
 )
-@app.get("/")
-def root():
-    return {"message": "DevOps Incident Response Environment is running"}
+
+
+def main(host: str = "0.0.0.0", port: int = 8000) -> None:
+    uvicorn.run(app, host=host, port=port)
+if __name__ == "__main__":
+    main()

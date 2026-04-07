@@ -1,30 +1,35 @@
 spec_version: 1
-name: devops-incident-env
-description: "DevOps Incident Response RL Environment - Train AI agents to detect, diagnose, and resolve distributed system failures across 6 microservices"
-type: environment
-runtime:
-  language: python
-  version: "3.11"
-app:
-  module: devops_incident_env.server.app
-  factory: app
+name: devops-incident-response
+type: space
+runtime: fastapi
+app: server.app:app
 port: 8000
+description: >
+  A production-style DevOps incident response environment where agents investigate
+  alerts, inspect logs, query metrics, diagnose root causes, and apply fixes across
+  a six-service microservice architecture.
 tasks:
   - id: easy_task
-    name: "Easy: Single Service Crash"
-    description: "Diagnose and fix a single service crash. The api_gateway is down - find it and restart it."
+    name: Single Service Crash
+    description: Diagnose and restart a crashed api_gateway service.
     difficulty: easy
     max_steps: 10
     reward_range: [0.0, 1.0]
   - id: medium_task
-    name: "Medium: Memory Leak Detection"
-    description: "A memory leak is causing repeated OOM kills. Identify the service and apply the correct memory fix."
+    name: Memory Leak with Cascading Symptoms
+    description: Track downstream latency back to an order_service memory leak.
     difficulty: medium
     max_steps: 15
     reward_range: [0.0, 1.0]
   - id: hard_task
-    name: "Hard: Cascading Microservice Failure"
-    description: "The database disk is full, causing a cascade through payment_service, order_service, and api_gateway. Trace the root cause and resolve it."
+    name: Cascading Failure Chain
+    description: Trace a multi-service outage back to a database disk exhaustion event.
     difficulty: hard
     max_steps: 20
     reward_range: [0.0, 1.0]
+metadata:
+  version: "1.0.0"
+  tags:
+    - openenv
+    - devops
+    - incident-response

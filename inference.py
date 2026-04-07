@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-# inference.py
-# ============================================================
-# DevOps Incident Response - Inference Script
-# Meta PyTorch OpenEnv Hackathon | MANDATORY SUBMISSION FILE
-# ============================================================
+"""Inference runner for the DevOps Incident Response environment."""
 
+from __future__ import annotations
+
+import asyncio
 import json
 import os
-import sys
-import time
-import uuid
+import re
+from typing import Any, Dict, List, Optional
 
-import requests
 from openai import OpenAI
 
 try:
@@ -23,290 +20,429 @@ except ImportError:
 
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
+MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 HF_TOKEN = os.environ.get("HF_TOKEN")
-ENV_URL = os.environ.get("ENV_URL", "https://aryanosh-devops-incident-env.hf.space")
+ENV_URL = os.environ.get("ENV_URL", "http://localhost:8000")
+IMAGE_NAME = os.environ.get("IMAGE_NAME")
+BENCHMARK = "devops-incident-response"
 
-TASKS = ["easy_task", "medium_task", "hard_task"]
-MAX_STEPS_PER_TASK = 15
+TASKS = [
+    {"task_id": "easy_task", "name": "Single Service Crash", "max_steps": 10},
+    {"task_id": "medium_task", "name": "Memory Leak with Cascading Symptoms", "max_steps": 15},
+    {"task_id": "hard_task", "name": "Cascading Failure Chain", "max_steps": 20},
+]
 
-SYSTEM_PROMPT = """You are an expert Site Reliability Engineer (SRE) responding to production incidents.
-You have access to a distributed microservices system with 6 services:
-- api_gateway, auth_service, user_service, order_service, payment_service, database
+SYSTEM_PROMPT = """You are an expert site reliability engineer handling a production incident.
+Return JSON only.
 
-You can perform these actions (respond ONLY with valid JSON):
-1. {"action_type": "read_logs",    "service": ""}
-2. {"action_type": "query_metrics","service": ""}
-3. {"action_type": "diagnose",     "service": "", "diagnosis": ""}
-4. {"action_type": "apply_fix",    "service": "", "fix": ""}
-5. {"action_type": "verify_health","service": ""}
+Valid actions:
+- {"action_type":"list_services"}
+- {"action_type":"check_dependencies"}
+- {"action_type":"read_logs","service":"<service>"}
+- {"action_type":"query_metrics","service":"<service>"}
+- {"action_type":"diagnose","service":"<service>","diagnosis":"<diagnosis>"}
+- {"action_type":"apply_fix","service":"<service>","fix":"<fix>"}
+- {"action_type":"verify_health","service":"<service>"}
 
-Valid diagnosis values: service_crash, memory_leak, high_latency, connection_pool_exhaustion, disk_full, certificate_expired, config_drift, unknown
-Valid fix values: restart_service, scale_service, rollback_config, clear_disk, rotate_certificate, memory_fix, connection_pool_fix, no_action
+Valid diagnoses:
+service_crash, memory_leak, high_latency, connection_pool_exhaustion, disk_full, certificate_expired, config_drift
 
-Strategy:
-1. Read logs from services with active alerts FIRST
-2. Query metrics to confirm your suspicion
-3. Submit a diagnose action with your root cause finding
-4. Apply the appropriate fix
-5. Verify health to confirm recovery
+Valid fixes:
+restart_service, memory_fix, scale_horizontally, flush_connection_pool, clear_disk, renew_certificate, rollback_config, increase_timeout
+"""
 
-IMPORTANT: Respond with ONLY the JSON action object, nothing else."""
+
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
+
+
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    error_value = error if error else "null"
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={str(done).lower()} error={error_value}",
+        flush=True,
+    )
+
+
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    rewards_text = ",".join(f"{reward:.2f}" for reward in rewards)
+    print(
+        f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_text}",
+        flush=True,
+    )
+
+
+def parse_llm_action(text: str) -> Optional[Dict[str, Any]]:
+    cleaned = text.strip()
+    if not cleaned:
+        return None
+    if "```" in cleaned:
+        for part in cleaned.split("```"):
+            candidate = part.strip()
+            if candidate.startswith("json"):
+                candidate = candidate[4:].strip()
+            if candidate.startswith("{"):
+                try:
+                    return json.loads(candidate)
+                except json.JSONDecodeError:
+                    pass
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if not match:
+            return None
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return None
 
 
 class DevOpsAgent:
-    def __init__(self):
-        if not HF_TOKEN:
-            print("[WARN] HF_TOKEN not set. Using unauthenticated access.", file=sys.stderr)
+    def __init__(self) -> None:
         self.client = OpenAI(
             base_url=API_BASE_URL,
             api_key=HF_TOKEN or "hf_placeholder",
+            timeout=3.0,
+            max_retries=0,
         )
-        self.conversation_history = []
-        self.fallback_step = 0
-        self.current_plan = []
+        self.history: List[str] = []
+        self.executed: List[Dict[str, Any]] = []
 
-    def reset_conversation(self):
-        self.conversation_history = [{"role": "system", "content": SYSTEM_PROMPT}]
-        self.fallback_step = 0
-        self.current_plan = []
+    def reset(self) -> None:
+        self.history = []
+        self.executed = []
 
-    def observe(self, observation: dict) -> str:
-        parts = [f"[Step {observation.get('step_number', '?')}/{observation.get('max_steps', '?')}]"]
+    def choose_action(self, observation: Dict[str, Any], task_id: str) -> Dict[str, Any]:
+        planned = self._planned_action(observation, task_id)
+        llm_action = self._query_llm(observation)
+        if self._matches_plan(llm_action, planned):
+            return llm_action
+        return planned
 
-        if observation.get("action_result"):
-            parts.append(f"ACTION RESULT: {observation['action_result']}")
+    def record(self, action: Dict[str, Any], reward: float, result: str) -> None:
+        self.executed.append(dict(action))
+        self.history.append(
+            f"{action.get('action_type')}:{action.get('service', '-')}:reward={reward:.2f}:result={result[:80]}"
+        )
 
-        alerts = observation.get("active_alerts", [])
-        if alerts:
-            parts.append(
-                "ACTIVE ALERTS:\n" + "\n".join(
-                    f"  [{a['severity'].upper()}] {a['service']}: {a['title']}" for a in alerts
-                )
-            )
-
-        summaries = observation.get("service_summaries", [])
-        if summaries:
-            parts.append(
-                "SERVICE STATUS:\n" + "\n".join(
-                    f"  {s['service_name']}: {s['status']}" for s in summaries
-                )
-            )
-
-        logs = observation.get("logs", [])
-        if logs:
-            parts.append(
-                "LOGS:\n" + "\n".join(
-                    f"  [{l['timestamp']}] [{l['level']}] {l['service']}: {l['message']}" for l in logs
-                )
-            )
-
-        metrics = observation.get("metrics")
-        if metrics:
-            parts.append(
-                f"METRICS for {metrics['service_name']}:\n"
-                f"  CPU: {metrics['cpu_percent']}% | Memory: {metrics['memory_mb']}/{metrics['memory_limit_mb']} MB\n"
-                f"  Latency: {metrics['request_latency_ms']}ms | Error Rate: {metrics['error_rate_percent']}%\n"
-                f"  Status: {metrics['status']}"
-            )
-
-        if observation.get("message"):
-            parts.append(f"SYSTEM: {observation['message']}")
-
-        return "\n\n".join(parts)
-
-    def act(self, observation_text: str) -> dict:
-        self.conversation_history.append({"role": "user", "content": observation_text})
-
+    def _query_llm(self, observation: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        prompt = self._build_prompt(observation)
         try:
             response = self.client.chat.completions.create(
                 model=MODEL_NAME,
-                messages=self.conversation_history,
-                max_tokens=256,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
                 temperature=0.1,
+                max_tokens=220,
             )
-            raw = response.choices[0].message.content.strip()
-            self.conversation_history.append({"role": "assistant", "content": raw})
-            parsed = self._parse_action(raw)
-            if parsed is not None:
-                return parsed
-        except Exception as e:
-            print(f"[WARN] LLM call failed: {e}", file=sys.stderr)
-
-        return self.fallback_policy(observation_text)
-
-    def _parse_action(self, text: str) -> dict | None:
-        try:
-            obj = json.loads(text)
-            if "action_type" in obj and "service" in obj:
-                return obj
-        except json.JSONDecodeError:
-            pass
-
-        import re
-
-        match = re.search(r"\{[^{}]+\}", text, re.DOTALL)
-        if not match:
+        except Exception:
             return None
+        content = response.choices[0].message.content or ""
+        return parse_llm_action(content)
 
-        try:
-            obj = json.loads(match.group())
-            if "action_type" in obj and "service" in obj:
-                return obj
-        except json.JSONDecodeError:
-            return None
-        return None
+    def _build_prompt(self, observation: Dict[str, Any]) -> str:
+        alerts = [
+            f"{item['severity']}:{item['service']}:{item['title']}"
+            for item in observation.get("active_alerts", [])
+        ]
+        services = [
+            f"{item['service_name']}={item['status']}"
+            for item in observation.get("service_summaries", [])
+        ]
+        logs = [
+            f"{item['service']}:{item['level']}:{item['message']}"
+            for item in observation.get("logs", [])[:4]
+        ]
+        metrics = observation.get("metrics")
+        metrics_text = ""
+        if metrics:
+            metrics_text = json.dumps(metrics, sort_keys=True)
+        history = "\n".join(self.history[-5:]) if self.history else "none"
+        return (
+            f"step={observation.get('step_number', 0)}\n"
+            f"alerts={alerts}\n"
+            f"services={services}\n"
+            f"logs={logs}\n"
+            f"metrics={metrics_text}\n"
+            f"message={observation.get('message', '')}\n"
+            f"history={history}\n"
+            "Return the best next JSON action."
+        )
 
-    def fallback_policy(self, observation_text: str) -> dict:
-        if not self.current_plan or self.fallback_step >= len(self.current_plan):
-            self.current_plan = self._build_fallback_plan(observation_text)
-            self.fallback_step = 0
-
-        action = self.current_plan[self.fallback_step]
-        self.fallback_step += 1
-        return action
-
-    def _build_fallback_plan(self, observation_text: str) -> list[dict]:
-        text = observation_text.lower()
-
-        if "elevated 503s" in text and "timeout rate high" in text:
-            service = "database"
-            diagnosis = "disk_full"
-            fix = "clear_disk"
-        elif "high memory usage" in text or "memory > 90%" in text:
-            service = "order_service"
-            diagnosis = "memory_leak"
-            fix = "memory_fix"
-        else:
-            service = "api_gateway"
-            diagnosis = "service_crash"
-            fix = "restart_service"
-
-        return [
+    def _planned_action(self, observation: Dict[str, Any], task_id: str) -> Dict[str, Any]:
+        if task_id != "easy_task" and not any(
+            action.get("action_type") == "check_dependencies" for action in self.executed
+        ):
+            return {"action_type": "check_dependencies"}
+        pending_verification = self._pending_verification_service()
+        if pending_verification:
+            return {"action_type": "verify_health", "service": pending_verification}
+        service = self._choose_target_service(observation)
+        diagnosis = self._infer_diagnosis(observation, service, task_id)
+        fix = self._fix_for_diagnosis(diagnosis)
+        plan = [
             {"action_type": "read_logs", "service": service},
             {"action_type": "query_metrics", "service": service},
             {"action_type": "diagnose", "service": service, "diagnosis": diagnosis},
             {"action_type": "apply_fix", "service": service, "fix": fix},
             {"action_type": "verify_health", "service": service},
         ]
+        for candidate in plan:
+            if not self._already_executed(candidate):
+                return candidate
+        return {"action_type": "list_services"}
+
+    def _choose_target_service(self, observation: Dict[str, Any]) -> str:
+        graph = observation.get("dependency_graph", {})
+        summaries = {
+            item["service_name"]: item["status"] for item in observation.get("service_summaries", [])
+        }
+        alerts = observation.get("active_alerts", [])
+        if alerts:
+            return self._walk_toward_root(alerts[0]["service"], graph, summaries)
+        unhealthy = [
+            item
+            for item in observation.get("service_summaries", [])
+            if item["status"] in {"critical", "down", "degraded"}
+        ]
+        if unhealthy:
+            return self._walk_toward_root(unhealthy[0]["service_name"], graph, summaries)
+        return "api_gateway"
+
+    def _walk_toward_root(
+        self,
+        service: str,
+        dependency_graph: Dict[str, List[str]],
+        summaries: Dict[str, str],
+    ) -> str:
+        current = service
+        visited: set[str] = set()
+        while current not in visited:
+            visited.add(current)
+            actions = self._actions_for_service(current)
+            dependencies = dependency_graph.get(current, [])
+            status = summaries.get(current, "healthy")
+            if not dependencies:
+                return current
+            if status in {"critical", "down"} and "apply_fix" not in actions:
+                return current
+            if {"read_logs", "query_metrics"}.issubset(actions) or "diagnose" in actions:
+                unhealthy_dependencies = [
+                    dep for dep in dependencies if summaries.get(dep) in {"critical", "down", "degraded"}
+                ]
+                candidates = unhealthy_dependencies or dependencies
+                next_service = next(
+                    (
+                        dep
+                        for dep in candidates
+                        if not {"read_logs", "query_metrics"}.issubset(self._actions_for_service(dep))
+                    ),
+                    candidates[0],
+                )
+                current = next_service
+                continue
+            return current
+        return current
+
+    def _infer_diagnosis(self, observation: Dict[str, Any], service: str, task_id: str) -> str:
+        text_bits = []
+        for alert in observation.get("active_alerts", []):
+            if alert["service"] == service:
+                text_bits.append(alert["title"])
+                text_bits.append(alert["description"])
+        for log in observation.get("logs", []):
+            if log["service"] == service:
+                text_bits.append(log["message"])
+        metrics = observation.get("metrics")
+        if metrics and metrics.get("service_name") == service:
+            if metrics.get("disk_used_gb", 0) >= 95:
+                return "disk_full"
+            if metrics.get("memory_mb", 0) >= metrics.get("memory_limit_mb", 1) * 0.9:
+                return "memory_leak"
+            if metrics.get("status") == "down":
+                return "service_crash"
+            if metrics.get("active_connections", 0) >= metrics.get("connection_pool_size", 1):
+                return "connection_pool_exhaustion"
+            if metrics.get("request_latency_p99_ms", 0) >= 3000:
+                return "high_latency"
+        text = " ".join(text_bits).lower()
+        for needle, diagnosis in [
+            ("disk", "disk_full"),
+            ("wal", "disk_full"),
+            ("oom", "memory_leak"),
+            ("memory", "memory_leak"),
+            ("connection pool", "connection_pool_exhaustion"),
+            ("tls", "certificate_expired"),
+            ("certificate", "certificate_expired"),
+            ("config", "config_drift"),
+            ("drift", "config_drift"),
+            ("latency", "high_latency"),
+            ("timeout", "high_latency"),
+            ("service down", "service_crash"),
+            ("crash", "service_crash"),
+        ]:
+            if needle in text:
+                return diagnosis
+        return {
+            "easy_task": "service_crash",
+            "medium_task": "memory_leak",
+            "hard_task": "disk_full",
+        }.get(task_id, "service_crash")
+
+    def _fix_for_diagnosis(self, diagnosis: str) -> str:
+        return {
+            "service_crash": "restart_service",
+            "memory_leak": "memory_fix",
+            "high_latency": "increase_timeout",
+            "connection_pool_exhaustion": "flush_connection_pool",
+            "disk_full": "clear_disk",
+            "certificate_expired": "renew_certificate",
+            "config_drift": "rollback_config",
+        }[diagnosis]
+
+    def _already_executed(self, candidate: Dict[str, Any]) -> bool:
+        for action in self.executed:
+            if action.get("action_type") != candidate.get("action_type"):
+                continue
+            if action.get("service") != candidate.get("service"):
+                continue
+            if action.get("diagnosis") != candidate.get("diagnosis"):
+                continue
+            if action.get("fix") != candidate.get("fix"):
+                continue
+            return True
+        return False
+
+    def _actions_for_service(self, service: str) -> set[str]:
+        return {
+            action.get("action_type", "")
+            for action in self.executed
+            if action.get("service") == service
+        }
+
+    def _pending_verification_service(self) -> Optional[str]:
+        for index in range(len(self.executed) - 1, -1, -1):
+            action = self.executed[index]
+            if action.get("action_type") != "apply_fix":
+                continue
+            service = action.get("service")
+            if not service:
+                continue
+            if any(
+                later.get("action_type") == "verify_health" and later.get("service") == service
+                for later in self.executed[index + 1 :]
+            ):
+                continue
+            return service
+        return None
+
+    def _matches_plan(self, llm_action: Optional[Dict[str, Any]], planned: Dict[str, Any]) -> bool:
+        if not llm_action:
+            return False
+        if llm_action.get("action_type") != planned.get("action_type"):
+            return False
+        if llm_action.get("service") != planned.get("service"):
+            return False
+        if planned.get("diagnosis") and llm_action.get("diagnosis") != planned.get("diagnosis"):
+            return False
+        if planned.get("fix") and llm_action.get("fix") != planned.get("fix"):
+            return False
+        return True
 
 
-def run_task(agent: DevOpsAgent, env: DevOpsIncidentEnv, task_id: str) -> dict:
-    agent.reset_conversation()
-    episode_id = str(uuid.uuid4())[:8]
+def extract_score(message: str) -> Optional[float]:
+    match = re.search(r"score:\s*([0-9]*\.?[0-9]+)", message, re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
 
-    print(json.dumps({"type": "[START]", "task_id": task_id, "episode_id": episode_id}), flush=True)
 
-    reset_result = env.reset(task_id=task_id)
-    obs = reset_result.observation.model_dump()
+def action_to_string(action: Dict[str, Any]) -> str:
+    service = action.get("service", "")
+    return f"{action.get('action_type', 'unknown')}({service})"
 
-    step_num = 0
-    final_reward = 0.0
-    done = False
 
-    while not done and step_num < MAX_STEPS_PER_TASK:
-        step_num += 1
-        obs_text = agent.observe(obs)
-        action = agent.act(obs_text)
+async def run_task(agent: DevOpsAgent, env: DevOpsIncidentEnv, task: Dict[str, Any]) -> float:
+    agent.reset()
+    rewards: List[float] = []
+    steps_taken = 0
+    success = False
+    score = 0.0
 
-        try:
-            result = env.step(IncidentAction(**action))
-        except Exception as e:
-            print(f"[WARN] Step failed: {e}", file=sys.stderr)
-            break
-
-        obs = result.observation.model_dump()
-        reward = result.reward
-        done = result.done
-        final_reward = reward
-
-        print(
-            json.dumps(
-                {
-                    "type": "[STEP]",
-                    "step": step_num,
-                    "action": action,
-                    "reward": round(reward, 4),
-                    "done": done,
-                }
-            ),
-            flush=True,
-        )
+    log_start(task=task["name"], env=BENCHMARK, model=MODEL_NAME)
 
     try:
-        state = env.state()
-        resolved = getattr(state, "is_resolved", done)
+        result = await env.reset(task_id=task["task_id"])
+        observation = result.observation.model_dump()
+
+        for step in range(1, task["max_steps"] + 1):
+            if result.done:
+                break
+
+            action_dict = agent.choose_action(observation, task["task_id"])
+            action_string = action_to_string(action_dict)
+            try:
+                action = IncidentAction(**action_dict)
+                result = await env.step(action)
+            except Exception as exc:
+                steps_taken = step
+                rewards.append(0.0)
+                log_step(step, action_string, 0.0, True, str(exc))
+                break
+
+            observation = result.observation.model_dump()
+            reward = float(result.reward or 0.0)
+            done = bool(result.done)
+            error = None if observation.get("success", True) else observation.get("action_result", "error")
+            rewards.append(reward)
+            steps_taken = step
+            agent.record(action_dict, reward, observation.get("action_result", ""))
+            log_step(step, action_string, reward, done, error)
+            if done:
+                break
+
+        score = extract_score(observation.get("message", "")) or 0.0
+        if score == 0.0:
+            try:
+                state = await env.state()
+                score = float(getattr(state, "final_score", 0.0) or 0.0)
+            except Exception:
+                score = 0.0
+        score = max(0.0, min(1.0, score))
+        success = score >= 0.3
     except Exception:
-        resolved = done
+        score = 0.0
+        success = False
+    finally:
+        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
-    print(
-        json.dumps(
-            {
-                "type": "[END]",
-                "task_id": task_id,
-                "episode_id": episode_id,
-                "total_steps": step_num,
-                "final_reward": round(final_reward, 4),
-                "resolved": resolved,
-            }
-        ),
-        flush=True,
-    )
-
-    return {
-        "task_id": task_id,
-        "steps": step_num,
-        "final_reward": round(final_reward, 4),
-        "resolved": resolved,
-    }
+    return score
 
 
-def main():
-    print("[INFO] Starting DevOps Incident Response evaluation", file=sys.stderr)
-    print(f"[INFO] ENV_URL: {ENV_URL}", file=sys.stderr)
-    print(f"[INFO] MODEL:   {MODEL_NAME}", file=sys.stderr)
-
-    try:
-        health = requests.get(f"{ENV_URL}/health", timeout=10)
-        print(f"[INFO] Environment health: {health.status_code}", file=sys.stderr)
-    except Exception as e:
-        print(f"[ERROR] Cannot reach environment at {ENV_URL}: {e}", file=sys.stderr)
-        sys.exit(1)
-
+async def main() -> None:
     agent = DevOpsAgent()
-    results = []
-    start_time = time.time()
+    if IMAGE_NAME:
+        env = await DevOpsIncidentEnv.from_docker_image(IMAGE_NAME)
+        close_required = True
+    else:
+        env = DevOpsIncidentEnv(base_url=ENV_URL)
+        await env.connect()
+        close_required = True
 
     try:
-        with DevOpsIncidentEnv(base_url=ENV_URL).sync() as env:
-            for task_id in TASKS:
-                print(f"\n[INFO] Running task: {task_id}", file=sys.stderr)
-                try:
-                    result = run_task(agent, env, task_id)
-                    results.append(result)
-                    print(
-                        f"[INFO] {task_id}: reward={result['final_reward']}, resolved={result['resolved']}",
-                        file=sys.stderr,
-                    )
-                except Exception as e:
-                    print(f"[ERROR] Task {task_id} failed: {e}", file=sys.stderr)
-                    results.append(
-                        {"task_id": task_id, "final_reward": 0.0, "resolved": False, "error": str(e)}
-                    )
-    except Exception as e:
-        print(f"[ERROR] Failed to establish persistent environment session: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    elapsed = round(time.time() - start_time, 2)
-    avg_reward = round(sum(r["final_reward"] for r in results) / len(results), 4) if results else 0.0
-
-    print(f"\n[INFO] Evaluation complete in {elapsed}s", file=sys.stderr)
-    print(f"[INFO] Average reward: {avg_reward}", file=sys.stderr)
-    for result in results:
-        print(f"[INFO]   {result['task_id']}: {result['final_reward']}", file=sys.stderr)
-
-    return avg_reward
+        scores = []
+        for task in TASKS:
+            scores.append(await run_task(agent, env, task))
+    finally:
+        if close_required:
+            await env.close()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

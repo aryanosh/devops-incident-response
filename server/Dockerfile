@@ -2,18 +2,10 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
 COPY server/requirements.txt ./requirements.txt
-
-ENV PIP_DEFAULT_TIMEOUT=1000
-ENV PIP_DISABLE_PIP_VERSION_CHECK=1
-ENV PIP_PROGRESS_BAR=off
-
-RUN pip install --no-cache-dir --retries 20 -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 

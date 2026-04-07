@@ -1,5 +1,5 @@
-# server/__init__.py
-from .incident_environment import IncidentEnvironment
-from .app import app
+"""Server package for the DevOps Incident Response environment."""
 
-__all__ = ["IncidentEnvironment", "app"]
+from .incident_environment import IncidentEnvironment
+
+__all__ = ["IncidentEnvironment"]
