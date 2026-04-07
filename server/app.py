@@ -22,6 +22,19 @@ app = create_app(
 )
 
 
+@app.get("/", include_in_schema=False)
+def root() -> dict[str, object]:
+    return {
+        "name": "devops-incident-response",
+        "status": "ok",
+        "message": "OpenEnv DevOps Incident Response environment is running.",
+        "docs": "/docs",
+        "health": "/health",
+        "metadata": "/metadata",
+        "schema": "/schema",
+    }
+
+
 def main(host: str = "0.0.0.0", port: int = 8000) -> None:
     uvicorn.run(app, host=host, port=port)
 if __name__ == "__main__":
