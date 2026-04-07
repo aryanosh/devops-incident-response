@@ -153,7 +153,7 @@ uvicorn server.app:app --host 0.0.0.0 --port 8000
 ### Docker
 
 ```bash
-docker build -t devops-incident-response -f server/Dockerfile .
+docker build -t devops-incident-response .
 docker run -p 8000:8000 devops-incident-response
 ```
 
