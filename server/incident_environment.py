@@ -126,8 +126,32 @@ SCENARIO_CONFIGS: Dict[str, Dict[str, Any]] = {
             "payment_service": "connection_pool_exhaustion",
             "auth_service": "high_latency",
         },
+        "red_herrings": {
+            "order_service": "memory_leak",
+            "payment_service": "high_latency",
+        },
         "max_steps": 20,
-        "optimal_steps": 7,
+        "optimal_steps": 9,
+    },
+    "expert_task": {
+        "name": "Multi-Root Cascading Failure",
+        "difficulty": "expert",
+        "root_causes": [
+            {"service": "database", "failure_mode": "disk_full", "fix": "clear_disk"},
+            {"service": "auth_service", "failure_mode": "certificate_expired", "fix": "renew_certificate"},
+        ],
+        "affected_services": {
+            "api_gateway": "high_latency",
+            "order_service": "connection_pool_exhaustion",
+            "payment_service": "high_latency",
+            "user_service": "high_latency",
+        },
+        "red_herrings": {
+            "order_service": "memory_leak",
+            "user_service": "config_drift",
+        },
+        "max_steps": 30,
+        "optimal_steps": 14,
     },
 }
 
@@ -164,6 +188,7 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
         self._scenario_config: Dict[str, Any] = {}
         self._root_causes: List[Dict[str, str]] = []
         self._affected_services: Dict[str, str] = {}
+        self._red_herrings: Dict[str, str] = {}
         self._services_investigated: Dict[str, set[str]] = {}
         self._investigation_steps: Dict[str, Dict[str, int]] = {}
         self._diagnoses_submitted: List[Dict[str, str]] = []
@@ -212,6 +237,7 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
         )
         self._root_causes = [dict(item) for item in self._scenario_config["root_causes"]]
         self._affected_services = dict(self._scenario_config.get("affected_services", {}))
+        self._red_herrings = dict(self._scenario_config.get("red_herrings", {}))
         self._services_investigated = {}
         self._investigation_steps = {}
         self._diagnoses_submitted = []
@@ -516,6 +542,37 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
         return REWARD_INVESTIGATE_HEALTHY_SERVICE
 
     def _compute_grader_score(self) -> float:
+        """
+        Compute final grader score in [0.0, 1.0] range.
+        
+        The grader evaluates agent performance across four dimensions:
+        
+        1. Root Cause Identification (35%):
+           - Rewards correct diagnosis with supporting evidence (logs/metrics)
+           - Partial credit for investigation without diagnosis
+           - Higher requirements for harder tasks (dependency tracing, etc.)
+        
+        2. Resolution Quality (30%):
+           - Correct fix applied to root cause services (70%)
+           - Health verification after fixes (30%)
+        
+        3. Efficiency (20%):
+           - Optimal step count: 100% efficiency score
+           - Up to 2x optimal: linear degradation
+           - Beyond 2x optimal: further degradation
+        
+        4. Safety (15%):
+           - Penalties for destructive actions on healthy services
+           - Penalties for incorrect fixes
+           - Penalties for blind fixes (without investigation)
+        
+        5. Time Pressure (penalty):
+           - Additional penalty for delays beyond 1.5x optimal steps
+           - Simulates incident escalation over time
+        
+        Returns:
+            float: Final score in [0.0, 1.0] range
+        """
         total_root_causes = len(self._root_causes)
         if total_root_causes == 0:
             return 0.0
@@ -562,11 +619,20 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
             - (self._incorrect_fixes * 0.05)
             - (self._blind_fixes * 0.1),
         )
+        
+        # Time pressure penalty - incidents get worse over time
+        time_pressure_penalty = 0.0
+        if steps_used > optimal * 1.5:
+            # Penalty grows as time increases beyond 1.5x optimal
+            excess_steps = steps_used - (optimal * 1.5)
+            time_pressure_penalty = min(0.12, excess_steps * 0.01)
+        
         score = (
             identification_score * GRADER_ROOT_CAUSE_WEIGHT
             + resolution_score * GRADER_RESOLUTION_WEIGHT
             + efficiency_score * GRADER_EFFICIENCY_WEIGHT
             + safety_score * GRADER_SAFETY_WEIGHT
+            - time_pressure_penalty
         )
         return round(max(0.0, min(1.0, score)), 4)
 
@@ -583,6 +649,8 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
 
     def _generate_logs(self, service: str) -> List[ServiceLog]:
         fixed_services = {fix["service"] for fix in self._fixes_applied if fix.get("success")}
+        
+        # Determine which log template to use
         if any(root["service"] == service for root in self._root_causes) and service not in fixed_services:
             mode = next(root["failure_mode"] for root in self._root_causes if root["service"] == service)
             templates = LOG_TEMPLATES[mode]
@@ -590,6 +658,9 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
             root["service"] in fixed_services for root in self._root_causes
         ):
             templates = LOG_TEMPLATES[self._affected_services[service]]
+        elif service in self._red_herrings and service not in self._services_investigated:
+            # Show red herring ONLY if service hasn't been investigated yet
+            templates = LOG_TEMPLATES[self._red_herrings[service]]
         else:
             templates = LOG_TEMPLATES["healthy"]
 
@@ -612,6 +683,8 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
 
     def _generate_metrics(self, service: str) -> ServiceMetrics:
         fixed_services = {fix["service"] for fix in self._fixes_applied if fix.get("success")}
+        
+        # Determine which metrics to show
         if any(root["service"] == service for root in self._root_causes) and service not in fixed_services:
             mode = next(root["failure_mode"] for root in self._root_causes if root["service"] == service)
             return self._metrics_for_failure(service, mode)
@@ -619,6 +692,10 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Incid
             root["service"] in fixed_services for root in self._root_causes
         ):
             return self._metrics_for_failure(service, self._affected_services[service])
+        if service in self._red_herrings and service not in self._services_investigated:
+            # Show red herring metrics ONLY if service hasn't been investigated yet
+            return self._metrics_for_failure(service, self._red_herrings[service])
+        
         return ServiceMetrics(
             service_name=service,
             cpu_percent=22.5,

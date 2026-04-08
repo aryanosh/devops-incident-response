@@ -23,9 +23,15 @@ tasks:
     reward_range: [0.0, 1.0]
   - id: hard_task
     name: Cascading Failure Chain
-    description: Trace a multi-service outage back to a database disk exhaustion event.
+    description: Trace a multi-service outage back to a database disk exhaustion event with misleading symptoms.
     difficulty: hard
     max_steps: 20
+    reward_range: [0.0, 1.0]
+  - id: expert_task
+    name: Multi-Root Cascading Failure
+    description: Diagnose and resolve multiple simultaneous root causes across different service tiers with red herrings.
+    difficulty: expert
+    max_steps: 30
     reward_range: [0.0, 1.0]
 metadata:
   version: "1.0.0"

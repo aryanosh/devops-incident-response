@@ -30,6 +30,7 @@ TASKS = [
     {"task_id": "easy_task", "name": "Single Service Crash", "max_steps": 10},
     {"task_id": "medium_task", "name": "Memory Leak with Cascading Symptoms", "max_steps": 15},
     {"task_id": "hard_task", "name": "Cascading Failure Chain", "max_steps": 20},
+    {"task_id": "expert_task", "name": "Multi-Root Cascading Failure", "max_steps": 30},
 ]
 
 SYSTEM_PROMPT = """You are an expert site reliability engineer handling a production incident.
@@ -290,6 +291,7 @@ class DevOpsAgent:
             "easy_task": "service_crash",
             "medium_task": "memory_leak",
             "hard_task": "disk_full",
+            "expert_task": "disk_full",  # Database is one of two root causes
         }.get(task_id, "service_crash")
 
     def _fix_for_diagnosis(self, diagnosis: str) -> str:
