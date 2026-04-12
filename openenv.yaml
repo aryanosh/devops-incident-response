@@ -4,26 +4,3 @@ type: space
 runtime: fastapi
 app: server.app:app
 port: 8000
-version: "1.0"
-description: "DevOps Incident Response RL Environment for SRE triage"
-tasks:
-	- id: easy_task
-		name: "Single Service Crash"
-		description: "Diagnose the crashed api_gateway and restore service."
-		difficulty: easy
-		grader: grader:grade_episode
-	- id: medium_task
-		name: "Memory Leak in Order Service"
-		description: "Trace degraded checkout behavior back to an order_service memory leak."
-		difficulty: medium
-		grader: grader:grade_episode
-	- id: hard_task
-		name: "Cascading Failure from Database Disk Saturation"
-		description: "Trace the dependency chain to database and resolve."
-		difficulty: hard
-		grader: grader:grade_episode
-	- id: expert_task
-		name: "Compound Failure Across Database and Payment Plane"
-		description: "Resolve a multi-root incident across database and payment_service."
-		difficulty: expert
-		grader: grader:grade_episode

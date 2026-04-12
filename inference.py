@@ -35,7 +35,7 @@ BENCHMARK = "devops_incident_env"
 
 def _display_reward(value: float) -> float:
     # Keep printed rewards strictly below 1.00 so 2dp formatting never rounds up to 1.00.
-    return max(0.0, min(0.99, float(value)))
+    return max(0.01, min(0.99, float(value)))
 
 
 def log_start(task: str, env: str, model: str) -> None:
