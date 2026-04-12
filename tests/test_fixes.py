@@ -18,35 +18,26 @@ from server.environment import IncidentEnvironment
 # ============================================================================
 
 class TestConcurrentEnvironmentIsolation:
-    """Test that concurrent requests are properly isolated."""
+    """Test HTTP reset/state behavior under the OpenEnv app wrapper."""
     
-    def test_session_isolation_with_headers(self) -> None:
-        """Verify that X-Session-ID header isolates environments."""
+    def test_reset_switches_active_task(self) -> None:
+        """Verify resetting different tasks updates active state deterministically."""
         client1 = TestClient(app)
-        client2 = TestClient(app)
         
-        # Client 1 resets to medium_task
         response1 = client1.post(
             "/reset",
             json={"task_id": "medium_task", "seed": 123},
-            headers={"X-Session-ID": "session_1"}
         )
         assert response1.status_code == 200
-        
-        # Client 2 resets to hard_task
-        response2 = client2.post(
-            "/reset",
-            json={"task_id": "hard_task", "seed": 456},
-            headers={"X-Session-ID": "session_2"}
-        )
-        assert response2.status_code == 200
-        
-        # Verify Client 1's state is intact
-        state1 = client1.get("/state", headers={"X-Session-ID": "session_1"}).json()
+        state1 = client1.get("/state").json()
         assert state1["task_id"] == "medium_task"
         
-        # Verify Client 2's state is intact
-        state2 = client2.get("/state", headers={"X-Session-ID": "session_2"}).json()
+        response2 = client1.post(
+            "/reset",
+            json={"task_id": "hard_task", "seed": 456},
+        )
+        assert response2.status_code == 200
+        state2 = client1.get("/state").json()
         assert state2["task_id"] == "hard_task"
 
 
@@ -77,8 +68,8 @@ class TestRewardArchitecture:
             if result.done:
                 # Final step should have step_reward=0.0, but final_score in info
                 assert result.reward == 0.0, "Final step reward should be 0.0"
-                assert result.info.get("grader_score") is not None, "Final score should be in info dict"
-                assert 0.001 <= result.info["grader_score"] <= 0.999, "Final score should be clamped"
+                assert result.metadata.get("grader_score") is not None, "Final score should be in metadata"
+                assert 0.001 <= result.metadata["grader_score"] <= 0.999, "Final score should be clamped"
                 break
     
     def test_intermediate_rewards_are_non_zero(self) -> None:
@@ -113,10 +104,10 @@ class TestDestructiveActionDetection:
             )
         )
         
-        state = env.state()
+        state = env.state
         assert state.destructive_actions >= 1, "Wrong fix should be marked as destructive"
         assert result.reward == 0.0, "Destructive action should get 0 reward"
-        assert not result.observation.success, "Destructive action should fail"
+        assert not result.success, "Destructive action should fail"
     
     def test_double_fix_detected_as_destructive(self) -> None:
         """Verify applying fix twice is detected as destructive."""
@@ -140,7 +131,7 @@ class TestDestructiveActionDetection:
                 fix="restart_service"
             )
         )
-        assert result1.observation.success, "First fix should succeed"
+        assert result1.success, "First fix should succeed"
         
         # Second fix (double fix - destructive)
         result2 = env.step(
@@ -150,9 +141,9 @@ class TestDestructiveActionDetection:
                 fix="restart_service"
             )
         )
-        state = env.state()
+        state = env.state
         assert state.destructive_actions >= 1, "Double fix should be marked as destructive"
-        assert not result2.observation.success, "Double fix should fail"
+        assert not result2.success, "Double fix should fail"
     
     def test_fix_on_healthy_service_destructive(self) -> None:
         """Verify fix on healthy service is destructive."""
@@ -168,7 +159,7 @@ class TestDestructiveActionDetection:
             )
         )
         
-        state = env.state()
+        state = env.state
         assert state.destructive_actions >= 1, "Fix on healthy service should be destructive"
         assert result.reward == 0.0, "Destructive action should get 0 reward"
 
@@ -305,8 +296,8 @@ class TestEndToEndIntegration:
             
             if result.done:
                 # Episode terminated
-                assert result.info.get("grader_score") is not None, "Final score should exist"
-                assert 0.001 <= result.info["grader_score"] <= 0.999
+                assert result.metadata.get("grader_score") is not None, "Final score should exist"
+                assert 0.001 <= result.metadata["grader_score"] <= 0.999
                 break
         
         # Should terminate before max_steps

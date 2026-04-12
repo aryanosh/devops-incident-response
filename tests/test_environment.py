@@ -22,9 +22,9 @@ def test_tasks_endpoint_lists_four_tasks() -> None:
 def test_reset_and_state_are_consistent() -> None:
     env = IncidentEnvironment()
     result = env.reset(task_id="medium_task", seed=123)
-    assert result.observation.step_number == 0
-    assert result.info["task_id"] == "medium_task"
-    assert env.state().task_id == "medium_task"
+    assert result.step_number == 0
+    assert result.metadata["task_id"] == "medium_task"
+    assert env.state.task_id == "medium_task"
 
 
 def test_deterministic_logs_for_same_seed() -> None:
@@ -34,7 +34,7 @@ def test_deterministic_logs_for_same_seed() -> None:
     env2.reset(task_id="easy_task", seed=55)
     result1 = env1.step(IncidentAction(action_type="read_logs", service="api_gateway"))
     result2 = env2.step(IncidentAction(action_type="read_logs", service="api_gateway"))
-    assert result1.observation.logs[0].message == result2.observation.logs[0].message
+    assert result1.logs[0].message == result2.logs[0].message
 
 
 def test_scores_are_strictly_inside_zero_one() -> None:
@@ -57,7 +57,7 @@ def test_scores_are_strictly_inside_zero_one() -> None:
         )
     )
     env.step(IncidentAction(action_type="verify_health", service="api_gateway"))
-    score = env.state().final_score
+    score = env.state.final_score
     assert score is not None
     assert 0.0 < score < 1.0
 

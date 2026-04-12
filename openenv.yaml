@@ -1,11 +1,6 @@
+spec_version: 1
 name: devops_incident_env
-version: "1.0.0"
-description: DevOps Incident Response RL Environment for SRE triage
-app_port: 8000
-sdk: docker
-pinned: false
-tags:
-	- openenv
-	- devops
-	- rl-environment
-	- sre
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000

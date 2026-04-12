@@ -3,143 +3,128 @@ from __future__ import annotations
 from typing import Any, Dict
 
 import uvicorn
-from fastapi import FastAPI, Request
+from openenv.core.env_server.http_server import create_app
+from fastapi import Body
+from fastapi.routing import APIRoute
 
 try:
     from ..baseline import choose_action
-    from ..constants import SCORE_FLOOR
-    from ..models import IncidentAction, IncidentObservation, ResetRequest, StepRequest
+    from ..models import IncidentAction, IncidentObservation
     from .environment import IncidentEnvironment
 except ImportError:
     from baseline import choose_action
-    from constants import SCORE_FLOOR
-    from models import IncidentAction, IncidentObservation, ResetRequest, StepRequest
+    from models import IncidentAction, IncidentObservation
     from server.environment import IncidentEnvironment
 
-app = FastAPI(title="devops_incident_env", version="1.0.0")
-_SESSION_ENVIRONMENTS: Dict[str, IncidentEnvironment] = {}
-_DEFAULT_SESSION = "default"
+_ENV = IncidentEnvironment()
 
 
-def _get_environment(request: Request) -> IncidentEnvironment:
-    """Get or create environment for this request session."""
-    session_id = request.headers.get("X-Session-ID", _DEFAULT_SESSION)
-    if session_id not in _SESSION_ENVIRONMENTS:
-        _SESSION_ENVIRONMENTS[session_id] = IncidentEnvironment()
-    return _SESSION_ENVIRONMENTS[session_id]
+def _env_factory() -> IncidentEnvironment:
+    # Reuse a singleton environment instance for HTTP endpoint continuity.
+    return _ENV
 
 
-def _current_observation(env: IncidentEnvironment) -> IncidentObservation:
-    state = env.state()
-    return env.build_observation(
-        action_result="Current environment snapshot.",
-        success=True,
-        message="State snapshot.",
-        step_number=state.step_count,
-    )
+app = create_app(
+    _env_factory,
+    IncidentAction,
+    IncidentObservation,
+    env_name="devops_incident_env",
+    max_concurrent_envs=10,
+)
+
+
+def _remove_route(path: str, method: str) -> None:
+    method = method.upper()
+    app.router.routes = [
+        route
+        for route in app.router.routes
+        if not (
+            isinstance(route, APIRoute)
+            and route.path == path
+            and method in route.methods
+        )
+    ]
+
+
+# Override default OpenEnv wrappers to keep backward-compatible payloads.
+_remove_route("/reset", "POST")
+_remove_route("/step", "POST")
+_remove_route("/state", "GET")
+
+
+def _wrap_observation(observation: IncidentObservation) -> Dict[str, Any]:
+    payload = observation.model_dump(exclude={"reward", "done", "metadata"})
+    return {
+        "observation": payload,
+        "reward": observation.reward,
+        "done": observation.done,
+        "info": observation.metadata,
+    }
 
 
 @app.get("/")
-def root(request: Request) -> Dict[str, Any]:
-    env = _get_environment(request)
-    return env.manifest()
-
-
-@app.get("/health")
-def health() -> Dict[str, str]:
-    return {"status": "healthy"}
+def root() -> Dict[str, Any]:
+    return _ENV.manifest()
 
 
 @app.get("/tasks")
-def tasks(request: Request) -> Dict[str, Any]:
-    env = _get_environment(request)
-    return env.tasks_payload()
+def tasks() -> Dict[str, Any]:
+    return _ENV.tasks_payload()
 
 
 @app.get("/manifest")
-def manifest(request: Request) -> Dict[str, Any]:
-    env = _get_environment(request)
-    return env.manifest()
+def manifest() -> Dict[str, Any]:
+    return _ENV.manifest()
 
 
 @app.post("/reset")
-def reset(request: Request, payload: ResetRequest | None = None) -> Dict[str, Any]:
-    env = _get_environment(request)
-    reset_request = payload or ResetRequest()
-    return env.reset(task_id=reset_request.task_id, seed=reset_request.seed).model_dump()
+def reset(payload: Dict[str, Any] | None = Body(default=None)) -> Dict[str, Any]:
+    request = payload or {}
+    observation = _ENV.reset(task_id=request.get("task_id"), seed=request.get("seed"))
+    return _wrap_observation(observation)
 
 
 @app.post("/step")
-def step(request: Request, payload: Dict[str, Any]) -> Dict[str, Any]:
-    env = _get_environment(request)
-    # Accept both OpenEnv-style wrapped payloads and direct action payloads.
+def step(payload: Dict[str, Any]) -> Dict[str, Any]:
     action_payload = payload.get("action") if isinstance(payload, dict) and "action" in payload else payload
     action = IncidentAction(**action_payload)
-    return env.step(action).model_dump()
+    observation = _ENV.step(action)
+    return _wrap_observation(observation)
 
 
 @app.get("/state")
-def state(request: Request) -> Dict[str, Any]:
-    env = _get_environment(request)
-    state_payload = env.state().model_dump()
-    # Keep numeric output stable for validators that require strict (0,1) scores.
-    if state_payload.get("final_score") is None:
-        state_payload["final_score"] = SCORE_FLOOR
-    return state_payload
+def state() -> Dict[str, Any]:
+    return _ENV.state.model_dump()
 
 
 @app.get("/grader")
-def grader(request: Request) -> Dict[str, Any]:
-    env = _get_environment(request)
-    score, details = env.grade()
+def grader() -> Dict[str, Any]:
+    score, details = _ENV.grade()
     return {
-        "task_id": env.state().task_id,
+        "task_id": _ENV.state.task_id,
         "score": score,
         "details": details,
     }
 
 
 @app.get("/baseline")
-def baseline(request: Request) -> Dict[str, Any]:
-    env = _get_environment(request)
-    action = choose_action(_current_observation(env).model_dump(), env.state().model_dump())
+def baseline() -> Dict[str, Any]:
+    state = _ENV.state
+    observation = _ENV.build_observation(
+        action_result="Current environment snapshot.",
+        success=True,
+        message="State snapshot.",
+        step_number=state.step_count,
+        reward=None,
+        done=state.done,
+    )
+    action = choose_action(observation.model_dump(), state.model_dump())
     return action.model_dump(exclude_none=True)
 
 
 @app.get("/sample_action")
-def sample_action(request: Request) -> Dict[str, Any]:
-    env = _get_environment(request)
-    action = choose_action(_current_observation(env).model_dump(), env.state().model_dump())
-    return action.model_dump(exclude_none=True)
-
-
-@app.get("/metadata")
-def metadata(request: Request) -> Dict[str, str]:
-    env = _get_environment(request)
-    manifest_data = env.manifest()
-    return {
-        "name": str(manifest_data["name"]),
-        "description": str(manifest_data["description"]),
-    }
-
-
-@app.get("/schema")
-def schema() -> Dict[str, Any]:
-    try:
-        from ..models import EnvironmentState, IncidentAction, IncidentObservation
-    except ImportError:
-        from models import EnvironmentState, IncidentAction, IncidentObservation
-
-    return {
-        "action": IncidentAction.model_json_schema(),
-        "observation": IncidentObservation.model_json_schema(),
-        "state": EnvironmentState.model_json_schema(),
-    }
-
-
-@app.post("/mcp")
-def mcp() -> Dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": 1, "result": {"status": "ok"}}
+def sample_action() -> Dict[str, Any]:
+    return baseline()
 
 
 def main() -> int:

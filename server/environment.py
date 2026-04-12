@@ -5,8 +5,10 @@ import hashlib
 import random
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
+from openenv.core.env_server.interfaces import Environment
 
 try:
+    from ..constants import SCORE_FLOOR
     from ..grader import _strict_score, grade_episode
     from ..models import (
         Alert,
@@ -16,7 +18,6 @@ try:
         ServiceLog,
         ServiceMetrics,
         ServiceSummary,
-        StepResponse,
     )
     from ..tasks import (
         ALL_SERVICES,
@@ -29,6 +30,7 @@ try:
         get_task_definitions,
     )
 except ImportError:
+    from constants import SCORE_FLOOR
     from grader import _strict_score, grade_episode
     from models import (
         Alert,
@@ -38,7 +40,6 @@ except ImportError:
         ServiceLog,
         ServiceMetrics,
         ServiceSummary,
-        StepResponse,
     )
     from tasks import (
         ALL_SERVICES,
@@ -52,8 +53,11 @@ except ImportError:
     )
 
 
-class IncidentEnvironment:
+class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, EnvironmentState]):
+    SUPPORTS_CONCURRENT_SESSIONS: bool = True
+
     def __init__(self) -> None:
+        super().__init__()
         self._scenario_config: Dict[str, Any] = dict(SCENARIO_CONFIGS["easy_task"])
         self._seed: int = 0
         self._rng = random.Random(0)
@@ -122,48 +126,61 @@ class IncidentEnvironment:
             last_action_error=None,
         )
 
-    def reset(self, task_id: str | None = None, seed: int | None = None) -> StepResponse:
+    def reset(
+        self,
+        seed: Optional[int] = None,
+        episode_id: Optional[str] = None,
+        task_id: str | None = None,
+        **kwargs: Any,
+    ) -> IncidentObservation:
+        requested_task = task_id or kwargs.get("task_id")
         selected_task = task_id if task_id in SCENARIO_CONFIGS else "easy_task"
+        if requested_task in SCENARIO_CONFIGS:
+            selected_task = str(requested_task)
         self._scenario_config = dict(SCENARIO_CONFIGS[selected_task])
-        self._seed = int(seed) if seed is not None else 12345
+        self._seed = int(seed) if seed is not None else int(kwargs.get("seed", 12345))
         self._rng = random.Random(self._seed)
         self._state = self._new_state(task_id=selected_task, seed=self._seed)
+        if episode_id:
+            self._state.episode_id = episode_id
 
         observation = self.build_observation(
             action_result="Environment reset. Pager alert fired for a new production incident.",
             success=True,
             message="Begin by reviewing active alerts and investigating the most critical service.",
             step_number=0,
-        )
-        return StepResponse(
-            observation=observation,
             reward=0.0,
             done=False,
-            info={
+            metadata={
                 "task_id": self._state.task_id,
                 "last_action_error": None,
                 "trajectory_reward": round(self._state.trajectory_reward, 3),
             },
         )
+        return observation
 
-    def step(self, action: IncidentAction) -> StepResponse:
+    def step(
+        self,
+        action: IncidentAction,
+        timeout_s: Optional[float] = None,
+        **kwargs: Any,
+    ) -> IncidentObservation:
+        _ = timeout_s, kwargs
         if self._state.done:
             observation = self.build_observation(
                 action_result="Episode is already complete.",
                 success=False,
                 message="Reset the environment to start a new task.",
                 step_number=self._state.step_count,
-            )
-            return StepResponse(
-                observation=observation,
                 reward=0.0,
                 done=True,
-                info={
+                metadata={
                     "task_id": self._state.task_id,
                     "last_action_error": "episode_already_done",
                     "trajectory_reward": round(self._state.trajectory_reward, 3),
                 },
             )
+            return observation
 
         self._state.step_count += 1
         self._state.last_action_error = None
@@ -221,15 +238,6 @@ class IncidentEnvironment:
         else:
             step_reward = reward
 
-        observation = self.build_observation(
-            action_result=action_result,
-            success=success,
-            message=message,
-            logs=logs,
-            metrics=metrics,
-            step_number=self._state.step_count,
-        )
-
         info: Dict[str, Any] = {
             "task_id": self._state.task_id,
             "last_action_error": self._state.last_action_error,
@@ -239,14 +247,25 @@ class IncidentEnvironment:
             info["grader_score"] = self._state.final_score
             info["grader_details"] = self._state.final_details
 
-        return StepResponse(
-            observation=observation,
+        observation = self.build_observation(
+            action_result=action_result,
+            success=success,
+            message=message,
+            logs=logs,
+            metrics=metrics,
+            step_number=self._state.step_count,
             reward=round(step_reward, 3),
             done=self._state.done,
-            info=info,
+            metadata=info,
         )
 
+        observation.metadata = info
+        return observation
+
+    @property
     def state(self) -> EnvironmentState:
+        if self._state.final_score is None:
+            return self._state.model_copy(update={"final_score": SCORE_FLOOR})
         return self._state
 
     def grade(self, task_id: str | None = None) -> Tuple[float, Dict[str, float]]:
@@ -293,6 +312,9 @@ class IncidentEnvironment:
         step_number: int,
         logs: Optional[List[ServiceLog]] = None,
         metrics: Optional[ServiceMetrics] = None,
+        reward: Optional[float] = None,
+        done: bool = False,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> IncidentObservation:
         return IncidentObservation(
             action_result=action_result,
@@ -308,6 +330,9 @@ class IncidentEnvironment:
             steps_remaining=max(self._state.max_steps - step_number, 0),
             available_services=list(ALL_SERVICES),
             available_actions=list(VALID_ACTION_TYPES),
+            reward=reward,
+            done=done,
+            metadata=metadata or {},
         )
 
     def _handle_list_services(self) -> Tuple[str, str, float]:
