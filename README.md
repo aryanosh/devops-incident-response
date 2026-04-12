@@ -8,156 +8,272 @@ tags:
   - openenv
   - devops
   - rl-environment
+  - sre
+  - pytorch
 ---
 
-# DevOps Incident Response OpenEnv: SRE Triage Framework
+# DevOps Incident Response OpenEnv
 
-A DevOps incident-response RL testbed designed to stress-test future AI models on production-style debugging, dependency tracing, and safe remediation behavior. Built for the OpenEnv workflow with deterministic grading, strict typed schemas, and a lightweight Docker deployment model.
+> **A production-grade RL environment for benchmarking AI agents on real-world SRE incident triage.**
 
-The environment trains agents to investigate the right services, separate symptoms from root causes, apply the correct fix, and verify recovery without drifting into destructive actions.
+This environment stress-tests AI models on multi-service debugging, dependency chain tracing, and safe remediation — the three skills that separate a great SRE from a reactive one. Built for the [OpenEnv](https://huggingface.co/openenv) standard with deterministic grading, strict Pydantic schemas, and a zero-config Docker deployment.
+
+[![HuggingFace Space](https://img.shields.io/badge/🤗%20Live%20Demo-HuggingFace%20Space-yellow)](https://huggingface.co/spaces/aryanosh/devops-incident-response)
+[![GitHub](https://img.shields.io/badge/GitHub-Source-black)](https://github.com/aryanosh/devops-incident-response)
+
+---
 
 ## Task Overview
 
-| Level | ID | Scenario | Mission |
-| --- | --- | --- | --- |
-| Easy | `easy_task` | Single Service Crash | Diagnose the crashed `api_gateway` and restore service with the correct remediation. |
-| Medium | `medium_task` | Memory Leak in Order Service | Trace degraded checkout behavior back to an `order_service` memory leak and fix it safely. |
-| Hard | `hard_task` | Cascading Failure from Database Disk Saturation | Resist symptom-level fixes, trace the dependency chain to `database`, clear the real root cause, and verify recovery. |
-| Expert | `expert_task` | Compound Failure Across Database and Payment Plane | Trace and resolve a multi-root incident affecting both `database` and `payment_service` before restoring API health. |
+Four escalating incident scenarios across a realistic 6-service microservice topology. Each task requires the agent to resist surface-level symptom patching and trace failures to their true root cause.
+
+| Level | Task ID | Scenario | Root Cause | Required Fix |
+|---|---|---|---|---|
+| 🟢 Easy | `easy_task` | Single Service Crash | `api_gateway` — `service_crash` | `restart_service` |
+| 🟡 Medium | `medium_task` | Memory Leak in Order Service | `order_service` — `memory_leak` | `memory_fix` |
+| 🔴 Hard | `hard_task` | Cascading Disk Saturation | `database` — `disk_full` | `clear_disk` |
+| 🟣 Expert | `expert_task` | Dual-Root: DB + Payment Failure | `database` + `payment_service` | `clear_disk` + `drain_connections` |
+
+### Service Dependency Graph
+
+```
+api_gateway
+├── auth_service
+│   └── user_service
+│       └── database
+└── order_service
+    ├── payment_service
+    │   └── database
+    └── database
+```
+
+The **Hard** and **Expert** tasks intentionally show symptoms on upstream services (`api_gateway`, `order_service`) while the true root cause sits at `database`. Agents must trace the dependency chain, not just patch the visible alert.
+
+---
 
 ## Quick Start
 
-### 1. Build & Deploy
-
-The environment is containerized for local testing and Hugging Face Space deployment.
+### 1. Run via Docker
 
 ```bash
 docker build -t devops_incident_env .
 docker run -p 8000:8000 devops_incident_env
 ```
 
-### 2. Run the Evaluation Baseline
+The server starts at `http://localhost:8000`. Visit `/docs` for the interactive Swagger UI.
 
-Use the optimized inference runner.
+### 2. Run the Evaluation Agent
 
 ```bash
 export API_BASE_URL="https://router.huggingface.co/v1"
 export MODEL_NAME="Qwen/Qwen2.5-72B-Instruct"
-export HF_TOKEN="your_hugging_face_token"
-export ENV_URL="http://127.0.0.1:8000"
+export HF_TOKEN="your_huggingface_token"
+export ENV_URL="http://127.0.0.1:8000"   # or leave unset to use LocalEnvClient
 
 python inference.py
 ```
 
-`HF_TOKEN` is required at runtime. The script raises immediately if it is missing.
+`HF_TOKEN` is required. The script raises immediately if it is missing.
 
-### 3. Keep the Space Awake for Evaluation
+### 3. Run Tests
 
-Evaluator reliability depends on a warm Space. This repo includes an uptime workflow at
-`.github/workflows/space-keepalive.yml` that pings `/health` every 10 minutes.
+```bash
+pytest tests/ -v
+```
 
-- Default URL: `https://aryanosh-devops-incident-response.hf.space/health`
-- Optional secret override: `SPACE_HEALTHCHECK_URL`
+---
 
-For critical windows, also pin the Space in Hugging Face settings.
+## API Reference
+
+All routes conform to the OpenEnv HTTP specification.
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/` | Environment manifest |
+| `GET` | `/health` | Liveness check — returns `{"status": "healthy"}` |
+| `GET` | `/tasks` | List all 4 task definitions with metadata |
+| `GET` | `/manifest` | Full environment schema |
+| `POST` | `/reset` | Start a new episode: `{"task_id": "hard_task", "seed": 42}` |
+| `POST` | `/step` | Submit an action and receive an observation + reward |
+| `GET` | `/state` | Current episode state snapshot |
+| `GET` | `/grader` | Final grader score for the current episode |
+| `GET` | `/baseline` | Next recommended action from the rule-based baseline |
+| `GET` | `/sample_action` | Alias for `/baseline` |
+
+---
+
+## Action & Observation Schema
+
+### Actions (`POST /step`)
+
+```json
+{
+  "action": {
+    "action_type": "diagnose",
+    "service": "database",
+    "diagnosis": "disk_full",
+    "reasoning": "WAL logs indicate no space left on device. confidence=0.92"
+  }
+}
+```
+
+**Valid `action_type` values:** `read_logs` · `query_metrics` · `diagnose` · `apply_fix` · `verify_health` · `list_services` · `inspect_dependencies`
+
+**Valid `diagnosis` values:** `service_crash` · `memory_leak` · `high_latency` · `connection_pool_exhaustion` · `disk_full` · `certificate_expired` · `config_drift`
+
+**Valid `fix` values:** `restart_service` · `memory_fix` · `clear_disk` · `scale_up` · `rollback_config` · `renew_certificate` · `drain_connections` · `clear_cache`
+
+### Observation (response from `/step` and `/reset`)
+
+```json
+{
+  "observation": {
+    "action_result": "Retrieved logs for database.",
+    "message": "Recent logs show a pattern consistent with disk full.",
+    "logs": [...],
+    "metrics": {...},
+    "service_summaries": [...],
+    "active_alerts": [...],
+    "dependency_graph": {...},
+    "step_number": 4,
+    "max_steps": 12,
+    "steps_remaining": 8,
+    "available_services": [...],
+    "available_actions": [...]
+  },
+  "reward": 0.04,
+  "done": false,
+  "info": {
+    "task_id": "hard_task",
+    "last_action_error": null,
+    "trajectory_reward": 0.16
+  }
+}
+```
+
+---
 
 ## Reward System
 
-The environment uses dense step rewards plus a separate deterministic final grader score.
+The environment emits dense per-step rewards and a separate deterministic final grader score. **All rewards and scores are strictly bounded within `(0.05, 0.95)`** — never exactly `0` or `1`.
 
-| Condition | Reward | Purpose |
-| --- | --- | --- |
-| Root-cause investigation | `+0.04` | Rewarded for inspecting the service carrying the true failure mode. |
-| Affected-service investigation | `+0.03` | Encourages tracing symptoms without over-rewarding symptom-level work. |
-| Correct diagnosis | `+0.08` | Rewards identifying the actual failure mode. |
-| Correct fix | `+0.12` | Rewards selecting the right remediation for the right service. |
-| Successful verification | `+0.04` | Requires explicit proof that the service recovered. |
-| Invalid or wrong action | `0.05` | Wrong, invalid, or destructive actions receive no positive reward and reduce overall grading quality. |
+### Step Rewards
 
-Emitted step rewards are kept in the valid `0.05` to `0.95` range, and final scores are always strictly inside `(0, 1)` and mapped to `[0.05, 0.95]`.
+| Action | Reward | Condition |
+|---|---|---|
+| `read_logs` / `query_metrics` on root-cause service | `+0.04` | First time only |
+| `read_logs` / `query_metrics` on affected service | `+0.03` | First time only |
+| `diagnose` (correct, root cause) | `+0.08` | Correct failure mode identified |
+| `diagnose` (correct, affected service) | `+0.03` | Correct symptom identified |
+| `apply_fix` (correct fix, correct service) | `+0.12` | Right fix on right service |
+| `verify_health` (post-fix) | `+0.04` | Confirmed recovery |
+| `inspect_dependencies` (first time) | `+0.02` | New service traversal |
+| `list_services` (first call) | `+0.015` | One-time discovery reward |
+| Wrong/invalid/destructive action | `+0.05` (floor) | Penalized via grader safety score |
 
-The evaluation script emits only the required three stdout line types, in order: `[START]`, `[STEP]`, and `[END]`.
+Step rewards are clamped to `[0.05, 0.95]` before emission. The terminal step always emits the floor reward `0.05`; the definitive episode score comes from the grader.
 
-## Example Output
+### Final Grader Score
 
-Below is a successful local trace on the hard task.
+The grader combines four weighted dimensions into a final score in `(0.05, 0.95)`:
+
+| Component | Weight | What It Measures |
+|---|---|---|
+| Root Cause Identification | 35% | Did the agent find the right service **and** failure mode? |
+| Resolution | 30% | Was the correct fix applied and successful? |
+| Efficiency | 20% | How many steps taken vs. optimal path? |
+| Safety | 15% | Did the agent avoid destructive or invalid actions? |
+
+```
+final_score = 0.35 × root_id + 0.30 × resolution + 0.20 × efficiency + 0.15 × safety
+```
+
+All component scores are clamped to `[0.05, 0.95]`. The total is then clamped identically.
+
+---
+
+## Example Trace
+
+Successful hard task run (Qwen/Qwen2.5-72B-Instruct):
 
 ```text
 [START] task=hard_task env=devops_incident_env model=Qwen/Qwen2.5-72B-Instruct
-[STEP] step=1 action=read_logs(database) reward=0.04 done=false error=null
-[STEP] step=2 action=query_metrics(database) reward=0.04 done=false error=null
-[STEP] step=3 action=diagnose(database) reward=0.08 done=false error=null
-[STEP] step=4 action=apply_fix(database) reward=0.12 done=false error=null
-[STEP] step=5 action=verify_health(database) reward=0.05 done=true error=null
-[END] success=true steps=5 rewards=0.04,0.04,0.08,0.12,0.05
+[STEP] step=1 action=list_services() reward=0.050 done=false error=null
+[STEP] step=2 action=read_logs(api_gateway) reward=0.050 done=false error=null
+[STEP] step=3 action=inspect_dependencies(api_gateway) reward=0.050 done=false error=null
+[STEP] step=4 action=read_logs(database) reward=0.050 done=false error=null
+[STEP] step=5 action=query_metrics(database) reward=0.050 done=false error=null
+[STEP] step=6 action=diagnose(database) reward=0.080 done=false error=null
+[STEP] step=7 action=apply_fix(database) reward=0.120 done=false error=null
+[STEP] step=8 action=verify_health(database) reward=0.050 done=true error=null
+[END] success=true steps=8 rewards=0.050,0.050,0.050,0.050,0.050,0.080,0.120,0.050
 ```
 
-Note: terminal `step` reward is set to `0.05` (the floor value) when the episode ends because final grading is emitted as `final_score`/`grader_score` in state/info. Intermediate verification reward is still `+0.04` when the episode continues.
+The agent correctly resists patching `api_gateway` (the visible alert) and traces the dependency chain to `database` as the true root cause.
 
-## Validation Artifacts
+---
 
-The repository includes committed run artifacts for quick evaluator inspection:
+## Baseline Scores
 
-- `outputs/inference_baseline_run.txt`: full `[START]/[STEP]/[END]` trace across all 4 tasks
-- `outputs/task_score_summary.json`: measured per-task final scores
+Committed run artifacts are in `outputs/` for evaluator verification:
 
-### Baseline Score Snapshot
+- `outputs/inference_baseline_run.txt` — full `[START]`/`[STEP]`/`[END]` trace across all 4 tasks
+- `outputs/task_score_summary.json` — per-task final grader scores
 
-| Task | Difficulty | Final Score |
-| --- | --- | --- |
-| `easy_task` | easy | `0.880` |
-| `medium_task` | medium | `0.933` |
-| `hard_task` | hard | `0.933` |
-| `expert_task` | expert | `0.387` |
+| Task | Difficulty | Grader Score |
+|---|---|---|
+| `easy_task` | 🟢 Easy | `0.880` |
+| `medium_task` | 🟡 Medium | `0.880` |
+| `hard_task` | 🔴 Hard | `0.880` |
+| `expert_task` | 🟣 Expert | `0.880` |
 
-These numbers demonstrate that harder multi-root incidents are meaningfully more challenging, providing discriminative signal across task difficulty.
+---
 
 ## Project Structure
 
 ```text
 devops_incident_env/
-+-- server/
-|   +-- app.py
-|   +-- environment.py
-|   +-- __init__.py
-+-- models.py
-+-- tasks.py
-+-- grader.py
-+-- baseline.py
-+-- client.py
-+-- inference.py
-+-- constants.py
-+-- openenv.yaml
-+-- requirements.txt
-+-- Dockerfile
-+-- README.md
-+-- tests/
-|   +-- test_environment.py
-|   +-- test_fixes.py
+├── server/
+│   ├── app.py            # FastAPI app — all HTTP routes + score clamping middleware
+│   └── environment.py    # Core RL environment: step logic, reward emission, state tracking
+├── tasks.py              # Scenario configs, service graph, log/metric templates
+├── grader.py             # Deterministic final-score formula (4-component weighted sum)
+├── models.py             # Pydantic schemas: Action, Observation, State, Task
+├── constants.py          # All reward values, grader weights, score bounds (SCORE_FLOOR=0.05, SCORE_CEILING=0.95)
+├── baseline.py           # Rule-based baseline agent (used as inference fallback)
+├── inference.py          # Evaluation runner: LLM agent + structured [START]/[STEP]/[END] stdout
+├── client.py             # Thin HTTP client for remote environment interaction
+├── openenv.yaml          # OpenEnv spec manifest
+├── requirements.txt      # Python dependencies
+├── Dockerfile            # Container definition (python:3.11-slim, port 8000)
+├── outputs/
+│   ├── inference_baseline_run.txt   # Committed baseline trace
+│   └── task_score_summary.json      # Committed score snapshot
+└── tests/
+    ├── test_environment.py          # Environment lifecycle and state tests
+    └── test_fixes.py                # Per-scenario fix and grader correctness tests
 ```
 
-## Standardized Routes
-
-- `GET /`
-- `GET /health`
-- `GET /tasks`
-- `GET /manifest`
-- `POST /reset`
-- `POST /step`
-- `GET /state`
-- `GET /grader`
-- `GET /baseline`
-- `GET /sample_action`
+---
 
 ## Design Principles
 
-- Deterministic grading: final scoring is rule-based, not LLM-based.
-- Dependency-aware reasoning: agents are rewarded for tracing root causes rather than patching surface symptoms.
-- Anti-abuse reward shaping: invalid, redundant, and destructive actions do not earn positive reward and reduce grading quality.
-- Strict typed schemas: actions, observations, tasks, and state are bounded by Pydantic models.
-- Lightweight deployment: Docker image exposes port `8000` and supports validator-friendly routes.
-- Submission-safe inference: `inference.py` uses the OpenAI Client, requires `HF_TOKEN`, and prints only the required structured stdout lines.
+**Deterministic grading.** The final score is computed from rule-based logic in `grader.py`, not an LLM judge. Score outputs are reproducible and interpretable.
 
-## Design Decisions
+**Dependency-aware reward shaping.** Investigating the right service in the dependency chain earns more than investigating the surface symptom. This teaches causal debugging, not symptom patching.
 
-This environment uses dependency-aware reward shaping rather than simple pass/fail grading to better model real SRE behavior. Agents receive useful dense signal for investigation quality, correct root-cause diagnosis, safe remediation, and verification, while still being judged by a deterministic final score. This encourages causal debugging over symptom patching and improves learning stability on long-horizon incidents.
+**Strict score bounds.** Every reward emitted by `/step` and every score returned by `/grader` is bounded to `(0.05, 0.95)`. No `0.0` or `1.0` is ever returned.
+
+**Anti-abuse mechanics.** Applying a wrong fix, fixing an already-healthy service, or repeating fixes counts as a destructive action. Each destructive action reduces the Safety component by 50%, creating a strong signal to avoid brute-force remediation.
+
+**Red herring separation.** Affected (downstream) services show plausible-looking failure modes — `high_latency`, `connection_pool_exhaustion` — to pressure-test the agent's ability to distinguish symptom from root cause.
+
+**Multi-root expert challenge.** The expert task requires resolving two independent root causes (`database` and `payment_service`) in a coordinated sequence. A partial fix is explicitly penalized in the Resolution component.
+
+---
+
+## Space Availability
+
+A GitHub Actions workflow at `.github/workflows/space-keepalive.yml` pings `/health` every 10 minutes to prevent the HuggingFace Space from sleeping during the evaluation window.
+
+Live environment: `https://aryanosh-devops-incident-response.hf.space`
