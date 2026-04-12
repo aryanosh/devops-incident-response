@@ -71,9 +71,11 @@ def _wrap_observation(observation: IncidentObservation) -> Dict[str, Any]:
         info["grader_score"] = _strict_unit(info.get("grader_score"))
     if "trajectory_reward" in info:
         info["trajectory_reward"] = _strict_unit(info.get("trajectory_reward"))
+    raw_reward = observation.reward
+    safe_reward = _strict_unit(raw_reward) if raw_reward is not None else SCORE_FLOOR
     return {
         "observation": payload,
-        "reward": observation.reward,
+        "reward": safe_reward,
         "done": observation.done,
         "info": info,
     }
