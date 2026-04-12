@@ -269,7 +269,7 @@ class IncidentEnvironment:
             "name": "devops_incident_env",
             "version": "1.0.0",
             "description": "DevOps Incident Response RL Environment for SRE triage",
-            "port": 7860,
+            "port": 8000,
             "routes": [
                 "/",
                 "/health",

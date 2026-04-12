@@ -44,7 +44,7 @@ Use the optimized inference runner.
 export API_BASE_URL="https://router.huggingface.co/v1"
 export MODEL_NAME="Qwen/Qwen2.5-72B-Instruct"
 export HF_TOKEN="your_hugging_face_token"
-export ENV_URL="http://127.0.0.1:7860"
+export ENV_URL="http://127.0.0.1:8000"
 
 python inference.py
 ```
@@ -126,4 +126,5 @@ devops_incident_env/
 - Anti-abuse reward shaping: invalid, redundant, and destructive actions do not earn positive reward and reduce grading quality.
 - Strict typed schemas: actions, observations, tasks, and state are bounded by Pydantic models.
 - Lightweight deployment: Docker image exposes port `7860` and supports validator-friendly routes.
+- Lightweight deployment: Docker image exposes port `8000` and supports validator-friendly routes.
 - Submission-safe inference: `inference.py` uses the OpenAI Client, requires `HF_TOKEN`, and prints only the required structured stdout lines.
