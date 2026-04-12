@@ -252,6 +252,55 @@ SCENARIO_CONFIGS: Dict[str, Dict[str, object]] = {
             },
         ],
     },
+    "expert_task": {
+        "name": "Compound Failure Across Database and Payment Plane",
+        "description": (
+            "The database is disk constrained and the payment service is also "
+            "exhausting its connection pool, creating a multi-root incident that "
+            "requires tracing both failure paths before the platform fully recovers."
+        ),
+        "difficulty": "hard",
+        "max_steps": 14,
+        "optimal_steps": 8,
+        "root_cause_services": ["database", "payment_service"],
+        "root_cause_failure_modes": ["disk_full", "connection_pool_exhaustion"],
+        "correct_fixes": {
+            "database": "clear_disk",
+            "payment_service": "drain_connections",
+        },
+        "affected_services": ["order_service", "api_gateway"],
+        "symptom_modes": {
+            "order_service": "high_latency",
+            "api_gateway": "high_latency",
+        },
+        "primary_alerts": [
+            {
+                "severity": "critical",
+                "service": "api_gateway",
+                "title": "Customer-Facing Errors Elevated",
+                "description": (
+                    "API traffic is timing out because both the payment and database paths are unhealthy."
+                ),
+                "runbook_hint": "Investigate both the visible symptom and the dependency chain.",
+            },
+            {
+                "severity": "critical",
+                "service": "payment_service",
+                "title": "Payment Workers Stalled",
+                "description": (
+                    "Workers are blocked waiting on connections while the database is under storage pressure."
+                ),
+                "runbook_hint": "Resolve the storage and pool bottlenecks in the correct order.",
+            },
+            {
+                "severity": "high",
+                "service": "database",
+                "title": "Database Storage Pressure Critical",
+                "description": "Primary database volume utilization is above 99% and interfering with writes.",
+                "runbook_hint": "Free storage before retry storms worsen the incident.",
+            },
+        ],
+    },
 }
 
 

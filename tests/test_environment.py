@@ -7,14 +7,15 @@ from server.app import app
 from server.environment import IncidentEnvironment
 
 
-def test_tasks_endpoint_lists_three_tasks() -> None:
+def test_tasks_endpoint_lists_four_tasks() -> None:
     client = TestClient(app)
     payload = client.get("/tasks").json()
-    assert payload["count"] == 3
+    assert payload["count"] == 4
     assert [task["task_id"] for task in payload["tasks"]] == [
         "easy_task",
         "medium_task",
         "hard_task",
+        "expert_task",
     ]
 
 

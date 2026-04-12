@@ -23,6 +23,7 @@ The environment trains agents to investigate the right services, separate sympto
 | Easy | `easy_task` | Single Service Crash | Diagnose the crashed `api_gateway` and restore service with the correct remediation. |
 | Medium | `medium_task` | Memory Leak in Order Service | Trace degraded checkout behavior back to an `order_service` memory leak and fix it safely. |
 | Hard | `hard_task` | Cascading Failure from Database Disk Saturation | Resist symptom-level fixes, trace the dependency chain to `database`, clear the real root cause, and verify recovery. |
+| Expert | `expert_task` | Compound Failure Across Database and Payment Plane | Trace and resolve a multi-root incident affecting both `database` and `payment_service` before restoring API health. |
 
 ## Quick Start
 
