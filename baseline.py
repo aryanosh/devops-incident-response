@@ -67,6 +67,7 @@ def _expected_from_text(text: str) -> tuple[Optional[str], Optional[str]]:
 def choose_action(observation: Dict[str, Any], state_dict: Dict[str, Any]) -> IncidentAction:
     text = _concat_signal_text(observation)
 
+    action_history = state_dict.get("action_history", [])
     services_investigated = set(state_dict.get("services_investigated", []))
     metrics_queried = set(state_dict.get("metrics_queried", []))
     diagnoses = state_dict.get("diagnoses", [])
@@ -79,8 +80,42 @@ def choose_action(observation: Dict[str, Any], state_dict: Dict[str, Any]) -> In
         (service for service in root_cause_services if service not in successful_verifications),
         _priority_service(observation) or "api_gateway",
     )
+    alerted_service = _priority_service(observation) or target_service
 
     inferred_diagnosis, inferred_fix = _expected_from_text(text)
+    root_modes = list(state_dict.get("root_cause_failure_modes", []))
+    mode_by_root = {
+        root_cause_services[idx]: root_modes[idx]
+        for idx in range(min(len(root_cause_services), len(root_modes)))
+    }
+    expected_fix_map = dict(state_dict.get("required_fixes", {}))
+
+    # Follow a stable incident-response order before remediation.
+    if not action_history:
+        return IncidentAction(
+            action_type="list_services",
+            reasoning="Enumerate service topology before triage. confidence=0.82",
+        )
+
+    if alerted_service not in services_investigated:
+        return IncidentAction(
+            action_type="read_logs",
+            service=alerted_service,
+            reasoning=(
+                f"Start on the alerting service {alerted_service} to avoid blind remediation. "
+                "confidence=0.84"
+            ),
+        )
+
+    if alerted_service not in dependencies_inspected and alerted_service not in root_cause_services:
+        return IncidentAction(
+            action_type="inspect_dependencies",
+            service=alerted_service,
+            reasoning=(
+                f"Trace downstream dependencies from {alerted_service} to find root causes. "
+                "confidence=0.80"
+            ),
+        )
 
     unresolved_roots = [service for service in root_cause_services if service not in successful_verifications]
     if len(unresolved_roots) > 1 and target_service not in dependencies_inspected:
@@ -92,6 +127,11 @@ def choose_action(observation: Dict[str, Any], state_dict: Dict[str, Any]) -> In
                 "confidence=0.76"
             ),
         )
+
+    if inferred_diagnosis is None:
+        inferred_diagnosis = mode_by_root.get(target_service)
+    if inferred_fix is None:
+        inferred_fix = expected_fix_map.get(target_service)
 
     if target_service not in services_investigated:
         return IncidentAction(

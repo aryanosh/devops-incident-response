@@ -1,0 +1,20 @@
+name: Space Keepalive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping-space:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Space health endpoint
+        env:
+          SPACE_HEALTHCHECK_URL: ${{ secrets.SPACE_HEALTHCHECK_URL }}
+        run: |
+          set -euo pipefail
+          URL="${SPACE_HEALTHCHECK_URL:-https://aryanosh-devops-incident-response.hf.space/health}"
+          echo "Pinging ${URL}"
+          curl --fail --silent --show-error --max-time 20 "${URL}" > /dev/null
+          echo "Space ping ok"

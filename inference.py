@@ -225,53 +225,51 @@ class DevOpsAgent:
             return None
 
     def _system_prompt(self) -> str:
-        return (
-            "You are an expert SRE incident commander. Analyze evidence incrementally and avoid destructive actions. "
-            "Prioritize root causes over symptoms by using alerts, logs, metrics, and dependency graph context. "
-            "For multi-root incidents, finish one root service end-to-end (investigate, diagnose, fix, verify) then proceed to the next unresolved root. "
-            "Return JSON only with keys: action_type, service, diagnosis (optional), fix (optional), reasoning. "
-            "Reasoning must include a confidence score like 'confidence=0.82'. "
-            "Valid action_type values are read_logs, query_metrics, diagnose, apply_fix, verify_health, list_services, inspect_dependencies."
-        )
+        return """You are an expert Site Reliability Engineer performing incident triage.
+
+You are given an observation describing an active incident in a microservice system.
+The service dependency graph is: api_gateway -> [auth_service, order_service] -> [user_service, payment_service] -> database.
+
+Your job is to find the ROOT CAUSE, not just the surface symptom. Always:
+1. Read logs and query metrics on the ALERTING service first.
+2. Trace dependencies downstream toward database to find the real failure.
+3. Diagnose the correct service before applying any fix.
+4. Apply the correct fix to the root-cause service only.
+5. Verify health after fixing.
+
+DO NOT apply a fix before diagnosing.
+DO NOT restart or remediate healthy services.
+
+Valid action_type values: read_logs, query_metrics, diagnose, apply_fix, verify_health, list_services, inspect_dependencies
+Valid diagnoses: service_crash, memory_leak, high_latency, connection_pool_exhaustion, disk_full, certificate_expired, config_drift
+Valid fixes: restart_service, memory_fix, clear_disk, scale_up, rollback_config, renew_certificate, drain_connections, clear_cache
+
+Respond with ONLY a JSON object.
+Allowed keys: action_type, service, diagnosis (optional), fix (optional), reasoning.
+Include a confidence in reasoning text like confidence=0.83.
+
+Example:
+{"action_type": "read_logs", "service": "database", "reasoning": "Database appears downstream of alerts and likely root. confidence=0.79"}"""
 
     def _build_prompt(self, observation: Dict[str, Any], state_dict: Dict[str, Any]) -> str:
-        root_services = state_dict.get("root_cause_services", [])
-        verified = state_dict.get("successful_verifications", [])
-        unresolved = [service for service in root_services if service not in verified]
-        recent_history = self.history[-5:]
+        parts: List[str] = []
+        if self.history:
+            parts.append("ACTIONS TAKEN SO FAR:\n" + "\n".join(self.history[-6:]))
 
-        prompt_payload = {
-            "objective": "Resolve the production incident safely and quickly.",
-            "policy": [
-                "Never apply fixes to healthy services.",
-                "Do not verify before a plausible fix unless explicitly gathering baseline health.",
-                "If multiple roots exist, prefer unresolved roots first.",
-            ],
-            "state_summary": {
-                "task_id": state_dict.get("task_id"),
-                "step_count": state_dict.get("step_count"),
-                "max_steps": state_dict.get("max_steps"),
-                "root_cause_services": root_services,
-                "unresolved_root_services": unresolved,
-                "last_action_error": state_dict.get("last_action_error"),
-            },
-            "recent_action_history": recent_history,
-            "observation": observation,
-            "output_schema": {
-                "action_type": "read_logs|query_metrics|diagnose|apply_fix|verify_health|list_services|inspect_dependencies",
-                "service": "service name",
-                "diagnosis": "required for diagnose",
-                "fix": "required for apply_fix",
-                "reasoning": "short rationale with confidence=0.xx",
-            },
-            "output_example": {
-                "action_type": "diagnose",
-                "service": "database",
-                "diagnosis": "disk_full",
-                "reasoning": "Repeated no-space errors and storage alerts point to disk_full. confidence=0.86",
-            },
+        root_services = list(state_dict.get("root_cause_services", []))
+        verified = set(state_dict.get("successful_verifications", []))
+        unresolved = [service for service in root_services if service not in verified]
+        state_view = {
+            "task_id": state_dict.get("task_id"),
+            "step_count": state_dict.get("step_count"),
+            "max_steps": state_dict.get("max_steps"),
+            "unresolved_root_services": unresolved,
+            "last_action_error": state_dict.get("last_action_error"),
         }
-        return json.dumps(prompt_payload, sort_keys=True)
+        parts.append("CURRENT STATE:\n" + json.dumps(state_view, sort_keys=True, indent=2))
+        parts.append("CURRENT OBSERVATION:\n" + json.dumps(observation, sort_keys=True, indent=2))
+        parts.append("What is your next action? Return JSON only.")
+        return "\n\n".join(parts)
 
 
 def action_to_string(action: Dict[str, Any]) -> str:

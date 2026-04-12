@@ -51,6 +51,16 @@ python inference.py
 
 `HF_TOKEN` is required at runtime. The script raises immediately if it is missing.
 
+### 3. Keep the Space Awake for Evaluation
+
+Evaluator reliability depends on a warm Space. This repo includes an uptime workflow at
+`.github/workflows/space-keepalive.yml` that pings `/health` every 10 minutes.
+
+- Default URL: `https://aryanosh-devops-incident-response.hf.space/health`
+- Optional secret override: `SPACE_HEALTHCHECK_URL`
+
+For critical windows, also pin the Space in Hugging Face settings.
+
 ## Reward System
 
 The environment uses dense step rewards plus a separate deterministic final grader score.
@@ -81,6 +91,26 @@ Below is a successful local trace on the hard task.
 [STEP] step=5 action=verify_health(database) reward=0.00 done=true error=null
 [END] success=true steps=5 rewards=0.04,0.04,0.08,0.12,0.00
 ```
+
+Note: terminal `step` reward is intentionally `0.00` when the episode ends because final grading is emitted as `final_score`/`grader_score` in state/info. Intermediate verification reward is still `+0.04` when the episode continues.
+
+## Validation Artifacts
+
+The repository includes committed run artifacts for quick evaluator inspection:
+
+- `outputs/inference_baseline_run.txt`: full `[START]/[STEP]/[END]` trace across all 4 tasks
+- `outputs/task_score_summary.json`: measured per-task final scores
+
+### Baseline Score Snapshot
+
+| Task | Difficulty | Final Score |
+| --- | --- | --- |
+| `easy_task` | easy | `0.880` |
+| `medium_task` | medium | `0.933` |
+| `hard_task` | hard | `0.933` |
+| `expert_task` | expert | `0.387` |
+
+These numbers demonstrate that harder multi-root incidents are meaningfully more challenging, providing discriminative signal across task difficulty.
 
 ## Project Structure
 
@@ -127,3 +157,7 @@ devops_incident_env/
 - Strict typed schemas: actions, observations, tasks, and state are bounded by Pydantic models.
 - Lightweight deployment: Docker image exposes port `8000` and supports validator-friendly routes.
 - Submission-safe inference: `inference.py` uses the OpenAI Client, requires `HF_TOKEN`, and prints only the required structured stdout lines.
+
+## Design Decisions
+
+This environment uses dependency-aware reward shaping rather than simple pass/fail grading to better model real SRE behavior. Agents receive useful dense signal for investigation quality, correct root-cause diagnosis, safe remediation, and verification, while still being judged by a deterministic final score. This encourages causal debugging over symptom patching and improves learning stability on long-horizon incidents.
