@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from typing import Any, Dict, List, Optional
@@ -17,11 +18,19 @@ except ImportError:
     from baseline import choose_action as choose_baseline_action
     from models import IncidentAction
 
+# Configure logging
+logging.basicConfig(
+    level=logging.CRITICAL,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.CRITICAL)
+
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
+HF_TOKEN = os.environ.get("HF_TOKEN")
 ENV_URL = os.environ.get("ENV_URL", "http://127.0.0.1:7860")
-BENCHMARK = "devops-incident-response"
+BENCHMARK = "devops_incident_env"
 
 
 def _display_reward(value: float) -> float:
@@ -79,23 +88,36 @@ def parse_llm_action(text: str) -> Optional[Dict[str, Any]]:
 class RemoteEnvClient:
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url.rstrip("/")
-        self.client = httpx.Client(timeout=10.0)
+        self.client = httpx.Client(timeout=15.0, limits=httpx.Limits(max_keepalive_connections=5))
 
     def close(self) -> None:
         self.client.close()
 
     def tasks(self) -> Dict[str, Any]:
-        return self.client.get(f"{self.base_url}/tasks").json()
+        response = self.client.get(f"{self.base_url}/tasks")
+        response.raise_for_status()
+        return response.json()
 
     def reset(self, task_id: str, seed: int) -> Dict[str, Any]:
-        response = self.client.post(f"{self.base_url}/reset", json={"task_id": task_id, "seed": seed})
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = self.client.post(f"{self.base_url}/reset", json={"task_id": task_id, "seed": seed})
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            logger.error(f"Reset request failed: {e}")
+            raise
 
     def step(self, action: Dict[str, Any]) -> Dict[str, Any]:
-        response = self.client.post(f"{self.base_url}/step", json={"action": action})
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = self.client.post(f"{self.base_url}/step", json={"action": action})
+            response.raise_for_status()
+            return response.json()
+        except httpx.TimeoutException:
+            logger.error(f"Step request timed out after 15s")
+            raise
+        except httpx.HTTPError as e:
+            logger.error(f"Step request failed: {e}")
+            raise
 
     def state(self) -> Dict[str, Any]:
         response = self.client.get(f"{self.base_url}/state")
@@ -141,11 +163,8 @@ class DevOpsAgent:
     def __init__(self) -> None:
         self.history: List[str] = []
         self.executed: List[Dict[str, Any]] = []
-        self.client = (
-            OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN, timeout=30.0, max_retries=2)
-            if HF_TOKEN
-            else None
-        )
+        self.client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN, timeout=30.0, max_retries=2)
+        self.llm_fallback_count = 0
 
     def reset(self) -> None:
         self.history = []
@@ -155,6 +174,7 @@ class DevOpsAgent:
         llm_action = self._query_llm(observation)
         if llm_action is not None:
             return llm_action
+        self.llm_fallback_count += 1
         return choose_baseline_action(observation, state_dict).model_dump(exclude_none=True)
 
     def record(self, action: Dict[str, Any], reward: float, result: str) -> None:
@@ -165,7 +185,9 @@ class DevOpsAgent:
 
     def _query_llm(self, observation: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if self.client is None:
+            logger.debug("LLM client not initialized (no HF_TOKEN)")
             return None
+        
         prompt = self._build_prompt(observation)
         try:
             response = self.client.chat.completions.create(
@@ -177,15 +199,20 @@ class DevOpsAgent:
                 temperature=0.1,
                 max_tokens=220,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning(f"LLM query failed: {type(e).__name__}: {e}")
             return None
+        
         content = response.choices[0].message.content or ""
         action = parse_llm_action(content)
         if not action:
+            logger.warning(f"Failed to parse LLM action from response: {content[:100]}")
             return None
+        
         try:
             return IncidentAction(**action).model_dump(exclude_none=True)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"LLM action validation failed: {e}")
             return None
 
     def _system_prompt(self) -> str:
@@ -204,60 +231,73 @@ def action_to_string(action: Dict[str, Any]) -> str:
     return f"{action.get('action_type', 'unknown')}({service})"
 
 
-def run_task(agent: DevOpsAgent, env: Any, task: Dict[str, Any]) -> float:
+def run_task(agent: DevOpsAgent, task: Dict[str, Any]) -> float:
     agent.reset()
+    env = build_env_client()
     rewards: List[float] = []
     steps_taken = 0
     success = False
+    score = 0.001
 
-    log_start(task=task["name"], env=BENCHMARK, model=MODEL_NAME)
+    # Use task_id in structured logs to keep token parsing stable.
+    log_start(task=task["task_id"], env=BENCHMARK, model=MODEL_NAME)
 
-    result = env.reset(task["task_id"], seed=12345)
-    observation = result["observation"]
-
-    for step in range(1, int(task["max_steps"]) + 1):
-        if result.get("done"):
-            break
-
-        state_dict = env.state()
-        action_dict = agent.choose_action(observation, state_dict)
-        action_string = action_to_string(action_dict)
-        try:
-            result = env.step(action_dict)
-        except Exception as exc:
-            rewards.append(0.0)
-            steps_taken = step
-            log_step(step, action_string, 0.0, True, str(exc))
-            break
-
+    try:
+        result = env.reset(task["task_id"], seed=12345)
         observation = result["observation"]
-        reward = max(0.0, min(1.0, float(result.get("reward", 0.0))))
-        done = bool(result.get("done", False))
-        error = None if observation.get("success", True) else observation.get("action_result", "error")
-        rewards.append(reward)
-        steps_taken = step
-        agent.record(action_dict, reward, observation.get("action_result", ""))
-        log_step(step, action_string, reward, done, error)
-        if done:
-            break
 
-    final_state = env.state()
-    score = float(final_state.get("final_score") or 0.001)
-    score = max(0.001, min(0.999, score))
-    success = score >= 0.5
-    log_end(success=success, steps=steps_taken, rewards=rewards)
+        for step in range(1, int(task["max_steps"]) + 1):
+            if result.get("done"):
+                break
+
+            state_dict = env.state()
+            action_dict = agent.choose_action(observation, state_dict)
+            action_string = action_to_string(action_dict)
+            try:
+                result = env.step(action_dict)
+            except Exception as exc:
+                rewards.append(0.0)
+                steps_taken = step
+                log_step(step, action_string, 0.0, True, str(exc))
+                break
+
+            observation = result["observation"]
+            reward = max(0.0, min(1.0, float(result.get("reward", 0.0))))
+            done = bool(result.get("done", False))
+            latest_state = env.state()
+            error = latest_state.get("last_action_error")
+            rewards.append(reward)
+            steps_taken = step
+            agent.record(action_dict, reward, observation.get("action_result", ""))
+            log_step(step, action_string, reward, done, error)
+            if done:
+                break
+
+        final_state = env.state()
+        score = float(final_state.get("final_score") or 0.001)
+        score = max(0.001, min(0.999, score))
+        success = score >= 0.5
+    finally:
+        env.close()
+        log_end(success=success, steps=steps_taken, rewards=rewards)
+
     return score
 
 
 def main() -> int:
-    env = build_env_client()
+    if not HF_TOKEN:
+        raise ValueError("HF_TOKEN environment variable is required")
+
+    tasks_env = build_env_client()
     agent = DevOpsAgent()
     try:
-        task_payload = env.tasks()
-        for task in task_payload.get("tasks", []):
-            run_task(agent, env, task)
+        task_payload = tasks_env.tasks()
     finally:
-        env.close()
+        tasks_env.close()
+
+    for task in task_payload.get("tasks", []):
+        run_task(agent, task)
+
     return 0
 
 

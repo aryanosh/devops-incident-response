@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 try:
     from ..baseline import choose_action
@@ -15,12 +15,21 @@ except ImportError:
     from server.environment import IncidentEnvironment
 
 app = FastAPI(title="devops_incident_env", version="1.0.0")
-ENVIRONMENT = IncidentEnvironment()
+_SESSION_ENVIRONMENTS: Dict[str, IncidentEnvironment] = {}
+_DEFAULT_SESSION = "default"
 
 
-def _current_observation() -> IncidentObservation:
-    state = ENVIRONMENT.state()
-    return ENVIRONMENT.build_observation(
+def _get_environment(request: Request) -> IncidentEnvironment:
+    """Get or create environment for this request session."""
+    session_id = request.headers.get("X-Session-ID", _DEFAULT_SESSION)
+    if session_id not in _SESSION_ENVIRONMENTS:
+        _SESSION_ENVIRONMENTS[session_id] = IncidentEnvironment()
+    return _SESSION_ENVIRONMENTS[session_id]
+
+
+def _current_observation(env: IncidentEnvironment) -> IncidentObservation:
+    state = env.state()
+    return env.build_observation(
         action_result="Current environment snapshot.",
         success=True,
         message="State snapshot.",
@@ -29,8 +38,9 @@ def _current_observation() -> IncidentObservation:
 
 
 @app.get("/")
-def root() -> Dict[str, Any]:
-    return ENVIRONMENT.manifest()
+def root(request: Request) -> Dict[str, Any]:
+    env = _get_environment(request)
+    return env.manifest()
 
 
 @app.get("/health")
@@ -39,56 +49,65 @@ def health() -> Dict[str, str]:
 
 
 @app.get("/tasks")
-def tasks() -> Dict[str, Any]:
-    return ENVIRONMENT.tasks_payload()
+def tasks(request: Request) -> Dict[str, Any]:
+    env = _get_environment(request)
+    return env.tasks_payload()
 
 
 @app.get("/manifest")
-def manifest() -> Dict[str, Any]:
-    return ENVIRONMENT.manifest()
+def manifest(request: Request) -> Dict[str, Any]:
+    env = _get_environment(request)
+    return env.manifest()
 
 
 @app.post("/reset")
-def reset(payload: ResetRequest | None = None) -> Dict[str, Any]:
-    request = payload or ResetRequest()
-    return ENVIRONMENT.reset(task_id=request.task_id, seed=request.seed).model_dump()
+def reset(request: Request, payload: ResetRequest | None = None) -> Dict[str, Any]:
+    env = _get_environment(request)
+    reset_request = payload or ResetRequest()
+    return env.reset(task_id=reset_request.task_id, seed=reset_request.seed).model_dump()
 
 
 @app.post("/step")
-def step(payload: StepRequest) -> Dict[str, Any]:
-    return ENVIRONMENT.step(payload.action).model_dump()
+def step(request: Request, payload: StepRequest) -> Dict[str, Any]:
+    env = _get_environment(request)
+    return env.step(payload.action).model_dump()
 
 
 @app.get("/state")
-def state() -> Dict[str, Any]:
-    return ENVIRONMENT.state().model_dump()
+def state(request: Request) -> Dict[str, Any]:
+    env = _get_environment(request)
+    return env.state().model_dump()
 
 
 @app.get("/grader")
-def grader() -> Dict[str, Any]:
-    score, details = ENVIRONMENT.grade()
+def grader(request: Request) -> Dict[str, Any]:
+    env = _get_environment(request)
+    score, details = env.grade()
     return {
-        "task_id": ENVIRONMENT.state().task_id,
+        "task_id": env.state().task_id,
         "score": score,
         "details": details,
     }
 
 
 @app.get("/baseline")
-def baseline() -> Dict[str, Any]:
-    action = choose_action(_current_observation().model_dump(), ENVIRONMENT.state().model_dump())
+def baseline(request: Request) -> Dict[str, Any]:
+    env = _get_environment(request)
+    action = choose_action(_current_observation(env).model_dump(), env.state().model_dump())
     return action.model_dump(exclude_none=True)
 
 
 @app.get("/sample_action")
-def sample_action() -> Dict[str, Any]:
-    action = choose_action(_current_observation().model_dump(), ENVIRONMENT.state().model_dump())
+def sample_action(request: Request) -> Dict[str, Any]:
+    env = _get_environment(request)
+    action = choose_action(_current_observation(env).model_dump(), env.state().model_dump())
     return action.model_dump(exclude_none=True)
 
 
 @app.get("/metadata")
-def metadata() -> Dict[str, str]:
-    manifest_data = ENVIRONMENT.manifest()
+def metadata(request: Request) -> Dict[str, str]:
+    env = _get_environment(request)
+    manifest_data = env.manifest()
     return {
         "name": str(manifest_data["name"]),
         "description": str(manifest_data["description"]),

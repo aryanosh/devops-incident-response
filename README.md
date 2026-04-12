@@ -48,6 +48,8 @@ export ENV_URL="http://127.0.0.1:7860"
 python inference.py
 ```
 
+`HF_TOKEN` is required at runtime. The script raises immediately if it is missing.
+
 ## Reward System
 
 The environment uses dense step rewards plus a separate deterministic final grader score.
@@ -59,42 +61,48 @@ The environment uses dense step rewards plus a separate deterministic final grad
 | Correct diagnosis | `+0.08` | Rewards identifying the actual failure mode. |
 | Correct fix | `+0.12` | Rewards selecting the right remediation for the right service. |
 | Successful verification | `+0.04` | Requires explicit proof that the service recovered. |
-| Invalid or wrong action | `-0.01` to `-0.05` | Penalizes blind fixes, destructive actions, and invalid inputs. |
+| Invalid or wrong action | `0.00` | Wrong, invalid, or destructive actions receive no positive reward and reduce overall grading quality. |
 
-Clamped final scores are always strictly inside `(0, 1)` and are mapped to `[0.001, 0.999]`.
+Emitted step rewards are kept in the valid `0.0` to `0.99` display range, and final scores are always strictly inside `(0, 1)` and mapped to `[0.001, 0.999]`.
+
+The evaluation script emits only the required three stdout line types, in order: `[START]`, `[STEP]`, and `[END]`.
 
 ## Example Output
 
 Below is a successful local trace on the hard task.
 
 ```text
-[START] task=Cascading Failure from Database Disk Saturation env=devops-incident-response model=Qwen/Qwen2.5-72B-Instruct
+[START] task=hard_task env=devops_incident_env model=Qwen/Qwen2.5-72B-Instruct
 [STEP] step=1 action=read_logs(database) reward=0.04 done=false error=null
 [STEP] step=2 action=query_metrics(database) reward=0.04 done=false error=null
 [STEP] step=3 action=diagnose(database) reward=0.08 done=false error=null
 [STEP] step=4 action=apply_fix(database) reward=0.12 done=false error=null
-[STEP] step=5 action=verify_health(database) reward=0.04 done=true error=null
-[END] success=true steps=5 rewards=0.04,0.04,0.08,0.12,0.04
+[STEP] step=5 action=verify_health(database) reward=0.99 done=true error=null
+[END] success=true steps=5 rewards=0.04,0.04,0.08,0.12,0.99
 ```
 
 ## Project Structure
 
 ```text
 devops_incident_env/
-├── server/
-│   ├── app.py
-│   ├── environment.py
-│   └── __init__.py
-├── models.py
-├── tasks.py
-├── grader.py
-├── baseline.py
-├── client.py
-├── inference.py
-├── openenv.yaml
-├── requirements.txt
-├── Dockerfile
-└── README.md
++-- server/
+|   +-- app.py
+|   +-- environment.py
+|   +-- __init__.py
++-- models.py
++-- tasks.py
++-- grader.py
++-- baseline.py
++-- client.py
++-- inference.py
++-- constants.py
++-- openenv.yaml
++-- requirements.txt
++-- Dockerfile
++-- README.md
++-- tests/
+|   +-- test_environment.py
+|   +-- test_fixes.py
 ```
 
 ## Standardized Routes
@@ -114,6 +122,7 @@ devops_incident_env/
 
 - Deterministic grading: final scoring is rule-based, not LLM-based.
 - Dependency-aware reasoning: agents are rewarded for tracing root causes rather than patching surface symptoms.
-- Anti-abuse reward shaping: invalid, redundant, and destructive actions receive penalties.
+- Anti-abuse reward shaping: invalid, redundant, and destructive actions do not earn positive reward and reduce grading quality.
 - Strict typed schemas: actions, observations, tasks, and state are bounded by Pydantic models.
 - Lightweight deployment: Docker image exposes port `7860` and supports validator-friendly routes.
+- Submission-safe inference: `inference.py` uses the OpenAI Client, requires `HF_TOKEN`, and prints only the required structured stdout lines.

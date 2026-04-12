@@ -4,6 +4,21 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+try:
+    from .constants import (
+        MAX_DIAGNOSIS_LENGTH,
+        MAX_FIX_LENGTH,
+        MAX_REASONING_LENGTH,
+        MAX_SERVICE_NAME_LENGTH,
+    )
+except ImportError:
+    from constants import (
+        MAX_DIAGNOSIS_LENGTH,
+        MAX_FIX_LENGTH,
+        MAX_REASONING_LENGTH,
+        MAX_SERVICE_NAME_LENGTH,
+    )
+
 
 class ServiceLog(BaseModel):
     timestamp: str = Field(..., description="ISO8601 timestamp")
@@ -54,10 +69,10 @@ class IncidentAction(BaseModel):
         "list_services",
         "inspect_dependencies",
     ]
-    service: Optional[str] = None
-    diagnosis: Optional[str] = None
-    fix: Optional[str] = None
-    reasoning: Optional[str] = None
+    service: Optional[str] = Field(None, max_length=MAX_SERVICE_NAME_LENGTH)
+    diagnosis: Optional[str] = Field(None, max_length=MAX_DIAGNOSIS_LENGTH)
+    fix: Optional[str] = Field(None, max_length=MAX_FIX_LENGTH)
+    reasoning: Optional[str] = Field(None, max_length=MAX_REASONING_LENGTH)
 
 
 class IncidentObservation(BaseModel):

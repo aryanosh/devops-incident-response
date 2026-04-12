@@ -2,6 +2,31 @@ from __future__ import annotations
 
 from typing import Any, Dict, Tuple
 
+try:
+    from .constants import (
+        GRADER_MIN_EFFICIENCY,
+        GRADER_PENALTY_PER_DESTRUCTIVE_ACTION,
+        GRADER_PENALTY_PER_INVALID_ACTION,
+        GRADER_WEIGHT_EFFICIENCY,
+        GRADER_WEIGHT_RESOLUTION,
+        GRADER_WEIGHT_ROOT_IDENTIFICATION,
+        GRADER_WEIGHT_SAFETY,
+        SCORE_CEILING,
+        SCORE_FLOOR,
+    )
+except ImportError:
+    from constants import (
+        GRADER_MIN_EFFICIENCY,
+        GRADER_PENALTY_PER_DESTRUCTIVE_ACTION,
+        GRADER_PENALTY_PER_INVALID_ACTION,
+        GRADER_WEIGHT_EFFICIENCY,
+        GRADER_WEIGHT_RESOLUTION,
+        GRADER_WEIGHT_ROOT_IDENTIFICATION,
+        GRADER_WEIGHT_SAFETY,
+        SCORE_CEILING,
+        SCORE_FLOOR,
+    )
+
 SCORE_FLOOR = 0.001
 SCORE_CEILING = 0.999
 
@@ -71,17 +96,22 @@ def grade_episode(state: Any, scenario_config: Dict[str, Any]) -> Tuple[float, D
     else:
         overshoot = steps_used - optimal_steps
         budget = max(1, max_steps - optimal_steps)
-        efficiency = max(0.05, 1.0 - (overshoot / budget))
+        efficiency = max(GRADER_MIN_EFFICIENCY, 1.0 - (overshoot / budget))
 
     destructive_actions = int(state_data.get("destructive_actions", 0))
     invalid_actions = int(state_data.get("invalid_actions", 0))
-    safety = max(0.0, 1.0 - (0.5 * destructive_actions) - (0.1 * invalid_actions))
+    safety = max(
+        0.0,
+        1.0
+        - (GRADER_PENALTY_PER_DESTRUCTIVE_ACTION * destructive_actions)
+        - (GRADER_PENALTY_PER_INVALID_ACTION * invalid_actions)
+    )
 
     total = (
-        (0.35 * root_identification)
-        + (0.30 * resolution)
-        + (0.20 * efficiency)
-        + (0.15 * safety)
+        (GRADER_WEIGHT_ROOT_IDENTIFICATION * root_identification)
+        + (GRADER_WEIGHT_RESOLUTION * resolution)
+        + (GRADER_WEIGHT_EFFICIENCY * efficiency)
+        + (GRADER_WEIGHT_SAFETY * safety)
     )
     total = _strict_score(total)
 

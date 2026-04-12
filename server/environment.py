@@ -58,6 +58,36 @@ class IncidentEnvironment:
         self._seed: int = 0
         self._rng = random.Random(0)
         self._state = self._new_state(task_id="easy_task", seed=0)
+        self._validate_scenario_configs()
+
+    def _validate_scenario_configs(self) -> None:
+        """Validate all scenario configs are logically consistent."""
+        for task_id, config in SCENARIO_CONFIGS.items():
+            root_services = config.get("root_cause_services", [])
+            failure_modes = config.get("root_cause_failure_modes", [])
+            affected_services = config.get("affected_services", [])
+            required_fixes = config.get("correct_fixes", {})
+            
+            # Check 1:1 mapping
+            if len(root_services) != len(failure_modes):
+                raise ValueError(
+                    f"Task {task_id}: root_cause_services ({len(root_services)} items) "
+                    f"length mismatch with root_cause_failure_modes ({len(failure_modes)} items)"
+                )
+            
+            # Check no overlap
+            overlap = set(root_services) & set(affected_services)
+            if overlap:
+                raise ValueError(
+                    f"Task {task_id}: root_cause_services and affected_services overlap: {overlap}"
+                )
+            
+            # Check required_fixes are defined for root services
+            for service in root_services:
+                if service not in required_fixes:
+                    raise ValueError(
+                        f"Task {task_id}: root cause service '{service}' missing from correct_fixes"
+                    )
 
     def _new_state(self, task_id: str, seed: Optional[int]) -> EnvironmentState:
         config = SCENARIO_CONFIGS[task_id]
@@ -117,8 +147,6 @@ class IncidentEnvironment:
         )
 
     def step(self, action: IncidentAction) -> StepResponse:
-        if not self._state.episode_id:
-            self.reset()
         if self._state.done:
             observation = self.build_observation(
                 action_result="Episode is already complete.",
@@ -188,7 +216,10 @@ class IncidentEnvironment:
             final_score, details = self.grade()
             self._state.final_score = final_score
             self._state.final_details = details
-            reward = self._state.final_score
+            # Keep step reward at 0.0; final score goes in info dict instead
+            step_reward = 0.0  # Episode end gets no incremental step reward
+        else:
+            step_reward = reward
 
         observation = self.build_observation(
             action_result=action_result,
@@ -210,14 +241,12 @@ class IncidentEnvironment:
 
         return StepResponse(
             observation=observation,
-            reward=round(reward, 3),
+            reward=round(step_reward, 3),
             done=self._state.done,
             info=info,
         )
 
     def state(self) -> EnvironmentState:
-        if not self._state.episode_id:
-            self.reset()
         return self._state
 
     def grade(self, task_id: str | None = None) -> Tuple[float, Dict[str, float]]:
@@ -230,7 +259,7 @@ class IncidentEnvironment:
 
     def tasks_payload(self) -> Dict[str, Any]:
         return {
-            "benchmark": "devops-incident-response",
+            "benchmark": "devops_incident_env",
             "count": len(get_task_definitions()),
             "tasks": [task.model_dump() for task in get_task_definitions()],
         }
@@ -440,39 +469,44 @@ class IncidentEnvironment:
         expected_fix = self._state.required_fixes.get(service)
         mode = self._service_failure_mode(service)
 
-        if mode == "healthy":
+        # Check for destructive actions: applying fix to healthy OR already-fixed OR wrong fix
+        is_healthy = mode == "healthy"
+        is_already_fixed = service in self._state.correct_fixes
+        is_wrong_fix = expected_fix is not None and fix != expected_fix
+        
+        if is_healthy or is_already_fixed or is_wrong_fix:
             self._state.destructive_actions += 1
             self._state.last_action_error = "destructive_action"
+            reason = ""
+            if is_healthy:
+                reason = "Avoid remediating healthy services."
+            elif is_already_fixed:
+                reason = f"Service {service} has already been fixed."
+            else:
+                reason = f"The expected remediation for {mode} is {expected_fix or 'different'}."
+            
             record = {"service": service, "fix": fix, "success": False, "destructive": True}
             self._state.fixes_applied.append(record)
             return (
-                f"Fix {fix} on {service} was destructive.",
-                "Avoid remediating healthy services.",
+                f"Fix {fix} on {service} was ineffective/destructive.",
+                reason,
                 0.0,
                 False,
             )
 
-        success = expected_fix == fix
-        record = {"service": service, "fix": fix, "success": success}
+        # Correct fix on problematic service
+        record = {"service": service, "fix": fix, "success": True}
         self._state.fixes_applied.append(record)
-
-        if success:
-            if service not in self._state.correct_fixes:
-                self._state.correct_fixes.append(service)
-                self._state.fix_correct_count += 1
-            return (
-                f"Fix applied successfully to {service}.",
-                f"{service} is recovering after {fix}.",
-                0.12,
-                True,
-            )
-
-        self._state.last_action_error = "incorrect_fix"
+        
+        if service not in self._state.correct_fixes:
+            self._state.correct_fixes.append(service)
+            self._state.fix_correct_count += 1
+        
         return (
-            f"Fix {fix} did not resolve {service}.",
-            f"The expected remediation for {mode} is {expected_fix or 'different'}.",
-            0.0,
-            False,
+            f"Fix applied successfully to {service}.",
+            f"{service} is recovering after {fix}.",
+            0.12,
+            True,
         )
 
     def _handle_verify_health(self, service: Optional[str]) -> Tuple[str, str, float, bool]:
@@ -530,6 +564,11 @@ class IncidentEnvironment:
     def _service_failure_mode(self, service: str) -> str:
         if service in self._state.root_cause_services and service not in self._state.correct_fixes:
             index = self._state.root_cause_services.index(service)
+            if index >= len(self._state.root_cause_failure_modes):
+                raise IndexError(
+                    f"Mode index {index} out of range for service {service}. "
+                    f"This indicates a configuration error in task definition."
+                )
             return self._state.root_cause_failure_modes[index]
         symptom_modes = self._scenario_config.get("symptom_modes", {})
         if service in self._state.affected_services and not self._roots_remediated():
@@ -582,7 +621,10 @@ class IncidentEnvironment:
 
     def _generate_logs(self, service: str) -> List[ServiceLog]:
         mode = self._service_failure_mode(service)
-        templates = LOG_TEMPLATES[mode]
+        templates = LOG_TEMPLATES.get(mode, LOG_TEMPLATES.get("healthy", []))
+        if not templates:
+            raise ValueError(f"No log templates for mode '{mode}' and no fallback available")
+        
         base_index = self._stable_index(service, mode)
         logs: List[ServiceLog] = []
         for offset in range(4):
@@ -600,6 +642,9 @@ class IncidentEnvironment:
 
     def _generate_metrics(self, service: str) -> ServiceMetrics:
         mode = self._service_failure_mode(service)
+        if mode not in LOG_TEMPLATES:
+            mode = "healthy"  # Fallback to healthy if mode not found
+        
         status = self._service_status(service)
         base: Dict[str, Any] = {
             "service_name": service,
