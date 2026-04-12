@@ -1,6 +1,5 @@
 """DevOps Incident Response OpenEnv environment."""
 
-from .client import DevOpsIncidentEnv
-from .models import IncidentAction, IncidentObservation, IncidentState
+from .models import EnvironmentState, IncidentAction, IncidentObservation
 
-__all__ = ["IncidentAction", "IncidentObservation", "IncidentState", "DevOpsIncidentEnv"]
+__all__ = ["IncidentAction", "IncidentObservation", "EnvironmentState"]
