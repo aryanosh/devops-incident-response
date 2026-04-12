@@ -32,7 +32,7 @@ def _strict_score(value: float) -> float:
     score = round(float(value), 3)
     if score != score:  # NaN guard
         return SCORE_FLOOR
-    return max(SCORE_FLOOR, min(SCORE_CEILING, score if score > 0 else SCORE_FLOOR))
+    return max(SCORE_FLOOR, min(SCORE_CEILING, score))
 
 
 def _to_dict(state: Any) -> Dict[str, Any]:
@@ -70,6 +70,7 @@ def grade_episode(state: Any, scenario_config: Dict[str, Any]) -> Tuple[float, D
         exact_part = len(correctly_diagnosed_roots) / len(root_services)
         investigation_part = len(set(root_services).intersection(investigated)) / len(root_services)
         root_identification = min(1.0, (0.7 * exact_part) + (0.3 * investigation_part))
+    root_identification = _strict_score(root_identification)
 
     correctly_fixed_roots = set()
     for item in fixes_applied:
@@ -82,6 +83,7 @@ def grade_episode(state: Any, scenario_config: Dict[str, Any]) -> Tuple[float, D
     resolution = 0.0
     if required_fixes:
         resolution = len(correctly_fixed_roots) / len(required_fixes)
+    resolution = _strict_score(resolution)
 
     steps_used = int(state_data.get("step_count", 0))
     if steps_used <= 0:
@@ -92,6 +94,7 @@ def grade_episode(state: Any, scenario_config: Dict[str, Any]) -> Tuple[float, D
         overshoot = steps_used - optimal_steps
         budget = max(1, max_steps - optimal_steps)
         efficiency = max(GRADER_MIN_EFFICIENCY, 1.0 - (overshoot / budget))
+    efficiency = _strict_score(efficiency)
 
     destructive_actions = int(state_data.get("destructive_actions", 0))
     invalid_actions = int(state_data.get("invalid_actions", 0))
@@ -101,6 +104,7 @@ def grade_episode(state: Any, scenario_config: Dict[str, Any]) -> Tuple[float, D
         - (GRADER_PENALTY_PER_DESTRUCTIVE_ACTION * destructive_actions)
         - (GRADER_PENALTY_PER_INVALID_ACTION * invalid_actions)
     )
+    safety = _strict_score(safety)
 
     total = (
         (GRADER_WEIGHT_ROOT_IDENTIFICATION * root_identification)
