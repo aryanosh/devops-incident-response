@@ -271,7 +271,11 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Envir
     def grade(self, task_id: str | None = None) -> Tuple[float, Dict[str, float]]:
         _ = task_id or self._state.task_id
         score, details = grade_episode(self._state, self._scenario_config)
-        return _strict_score(score), details
+        clamped_details = {
+            key: _strict_score(value)
+            for key, value in details.items()
+        }
+        return _strict_score(score), clamped_details
 
     def tasks(self) -> List[Any]:
         return get_task_definitions()

@@ -82,3 +82,13 @@ def test_state_endpoint_final_score_is_strictly_inside_zero_one() -> None:
     client.post("/reset", json={"task_id": "easy_task", "seed": 7})
     payload = client.get("/state").json()
     assert 0.0 < payload["final_score"] < 1.0
+
+
+def test_grader_details_are_strictly_inside_zero_one_for_all_tasks() -> None:
+    client = TestClient(app)
+    tasks = client.get("/tasks").json()["tasks"]
+    for task in tasks:
+        client.post("/reset", json={"task_id": task["task_id"], "seed": 11})
+        payload = client.get("/grader").json()
+        for metric_name, metric_value in payload["details"].items():
+            assert 0.0 < float(metric_value) < 1.0, f"{task['task_id']} {metric_name} out of range"
