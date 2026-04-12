@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from openenv.core.env_server.interfaces import Environment
 
 try:
-    from ..constants import SCORE_FLOOR
+    from ..constants import SCORE_CEILING, SCORE_FLOOR, TRAJECTORY_REWARD_MAX, TRAJECTORY_REWARD_MIN
     from ..grader import _strict_score, grade_episode
     from ..models import (
         Alert,
@@ -30,7 +30,7 @@ try:
         get_task_definitions,
     )
 except ImportError:
-    from constants import SCORE_FLOOR
+    from constants import SCORE_CEILING, SCORE_FLOOR, TRAJECTORY_REWARD_MAX, TRAJECTORY_REWARD_MIN
     from grader import _strict_score, grade_episode
     from models import (
         Alert,
@@ -149,7 +149,7 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Envir
             success=True,
             message="Begin by reviewing active alerts and investigating the most critical service.",
             step_number=0,
-            reward=0.001,
+            reward=SCORE_FLOOR,
             done=False,
             metadata={
                 "task_id": self._state.task_id,
@@ -172,7 +172,7 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Envir
                 success=False,
                 message="Reset the environment to start a new task.",
                 step_number=self._state.step_count,
-                reward=0.001,
+                reward=SCORE_FLOOR,
                 done=True,
                 metadata={
                     "task_id": self._state.task_id,
@@ -215,10 +215,10 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Envir
         elif action_type == "verify_health":
             action_result, message, reward, success = self._handle_verify_health(action.service)
 
-        reward = round(max(0.001, min(0.999, reward)), 3)
+        reward = round(max(SCORE_FLOOR, min(SCORE_CEILING, reward)), 3)
         self._append_action_history(action, reward, success)
         self._state.trajectory_reward = round(
-            max(-0.999, min(0.999, self._state.trajectory_reward + reward)),
+            max(TRAJECTORY_REWARD_MIN, min(TRAJECTORY_REWARD_MAX, self._state.trajectory_reward + reward)),
             3,
         )
 
@@ -234,7 +234,7 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Envir
             self._state.final_score = final_score
             self._state.final_details = details
             # Keep a minimal positive terminal step reward for strict open-interval validators.
-            step_reward = 0.001
+            step_reward = SCORE_FLOOR
         else:
             step_reward = reward
 

@@ -9,10 +9,12 @@ from fastapi.routing import APIRoute
 
 try:
     from ..baseline import choose_action
+    from ..constants import SCORE_CEILING, SCORE_FLOOR
     from ..models import IncidentAction, IncidentObservation
     from .environment import IncidentEnvironment
 except ImportError:
     from baseline import choose_action
+    from constants import SCORE_CEILING, SCORE_FLOOR
     from models import IncidentAction, IncidentObservation
     from server.environment import IncidentEnvironment
 
@@ -33,7 +35,7 @@ app = create_app(
 )
 
 
-def _strict_unit(value: Any, floor: float = 0.001, ceiling: float = 0.999) -> float:
+def _strict_unit(value: Any, floor: float = SCORE_FLOOR, ceiling: float = SCORE_CEILING) -> float:
     try:
         score = float(value)
     except (TypeError, ValueError):
@@ -110,8 +112,8 @@ def step(payload: Dict[str, Any]) -> Dict[str, Any]:
 @app.get("/state")
 def state() -> Dict[str, Any]:
     payload = _ENV.state.model_dump()
-    payload["final_score"] = _strict_unit(payload.get("final_score") or 0.001)
-    payload["trajectory_reward"] = _strict_unit(payload.get("trajectory_reward") or 0.001)
+    payload["final_score"] = _strict_unit(payload.get("final_score") or SCORE_FLOOR)
+    payload["trajectory_reward"] = _strict_unit(payload.get("trajectory_reward") or SCORE_FLOOR)
     return payload
 
 

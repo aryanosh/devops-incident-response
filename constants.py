@@ -39,11 +39,11 @@ GRADER_PENALTY_PER_INVALID_ACTION = 0.1
 # Score Clamping Bounds
 # ============================================================================
 
-SCORE_FLOOR = 0.001
-SCORE_CEILING = 0.999
-REWARD_DISPLAY_MAX = 0.99
-TRAJECTORY_REWARD_MAX = 0.999
-TRAJECTORY_REWARD_MIN = -0.999
+SCORE_FLOOR = 0.05
+SCORE_CEILING = 0.95
+REWARD_DISPLAY_MAX = 0.95
+TRAJECTORY_REWARD_MAX = 0.95
+TRAJECTORY_REWARD_MIN = -0.95
 
 # ============================================================================
 # Request & Timeout Configuration

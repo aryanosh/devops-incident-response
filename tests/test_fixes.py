@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from grader import SCORE_CEILING, SCORE_FLOOR
 from models import IncidentAction
 from server.app import app
 from server.environment import IncidentEnvironment
@@ -67,9 +68,9 @@ class TestRewardArchitecture:
             
             if result.done:
                 # Final step keeps a minimal positive reward for strict open-interval validators.
-                assert result.reward == 0.001, "Final step reward should be 0.001"
+                assert result.reward == SCORE_FLOOR, f"Final step reward should be {SCORE_FLOOR}"
                 assert result.metadata.get("grader_score") is not None, "Final score should be in metadata"
-                assert 0.001 <= result.metadata["grader_score"] <= 0.999, "Final score should be clamped"
+                assert SCORE_FLOOR <= result.metadata["grader_score"] <= SCORE_CEILING, "Final score should be clamped"
                 break
     
     def test_intermediate_rewards_are_non_zero(self) -> None:
@@ -106,7 +107,7 @@ class TestDestructiveActionDetection:
         
         state = env.state
         assert state.destructive_actions >= 1, "Wrong fix should be marked as destructive"
-        assert result.reward == 0.001, "Destructive action should get minimal positive reward"
+        assert result.reward == SCORE_FLOOR, "Destructive action should get minimal positive reward"
         assert not result.success, "Destructive action should fail"
     
     def test_double_fix_detected_as_destructive(self) -> None:
@@ -161,7 +162,7 @@ class TestDestructiveActionDetection:
         
         state = env.state
         assert state.destructive_actions >= 1, "Fix on healthy service should be destructive"
-        assert result.reward == 0.001, "Destructive action should get minimal positive reward"
+        assert result.reward == SCORE_FLOOR, "Destructive action should get minimal positive reward"
 
 
 # ============================================================================
@@ -297,7 +298,7 @@ class TestEndToEndIntegration:
             if result.done:
                 # Episode terminated
                 assert result.metadata.get("grader_score") is not None, "Final score should exist"
-                assert 0.001 <= result.metadata["grader_score"] <= 0.999
+                assert SCORE_FLOOR <= result.metadata["grader_score"] <= SCORE_CEILING
                 break
         
         # Should terminate before max_steps

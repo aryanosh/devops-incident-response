@@ -13,9 +13,11 @@ from openai import OpenAI
 
 try:
     from .baseline import choose_action as choose_baseline_action
+    from .constants import SCORE_CEILING, SCORE_FLOOR
     from .models import IncidentAction
 except ImportError:
     from baseline import choose_action as choose_baseline_action
+    from constants import SCORE_CEILING, SCORE_FLOOR
     from models import IncidentAction
 
 # Configure logging
@@ -34,8 +36,8 @@ BENCHMARK = "devops_incident_env"
 
 
 def _display_reward(value: float) -> float:
-    # Keep printed rewards strictly within (0, 1) for validator parsing.
-    return max(0.001, min(0.999, float(value)))
+    # Keep printed rewards strictly within the configured score interval.
+    return max(SCORE_FLOOR, min(SCORE_CEILING, float(value)))
 
 
 def log_start(task: str, env: str, model: str) -> None:
@@ -283,7 +285,7 @@ def run_task(agent: DevOpsAgent, task: Dict[str, Any]) -> float:
     rewards: List[float] = []
     steps_taken = 0
     success = False
-    score = 0.001
+    score = SCORE_FLOOR
 
     # Use task_id in structured logs to keep token parsing stable.
     log_start(task=task["task_id"], env=BENCHMARK, model=MODEL_NAME)
@@ -302,13 +304,13 @@ def run_task(agent: DevOpsAgent, task: Dict[str, Any]) -> float:
             try:
                 result = env.step(action_dict)
             except Exception as exc:
-                rewards.append(0.001)
+                rewards.append(SCORE_FLOOR)
                 steps_taken = step
-                log_step(step, action_string, 0.001, True, str(exc))
+                log_step(step, action_string, SCORE_FLOOR, True, str(exc))
                 break
 
             observation = result["observation"]
-            reward = max(0.001, min(0.999, float(result.get("reward", 0.001))))
+            reward = max(SCORE_FLOOR, min(SCORE_CEILING, float(result.get("reward", SCORE_FLOOR))))
             done = bool(result.get("done", False))
             latest_state = env.state()
             error = latest_state.get("last_action_error")
@@ -320,8 +322,8 @@ def run_task(agent: DevOpsAgent, task: Dict[str, Any]) -> float:
                 break
 
         final_state = env.state()
-        score = float(final_state.get("final_score") or 0.001)
-        score = max(0.001, min(0.999, score))
+        score = float(final_state.get("final_score") or SCORE_FLOOR)
+        score = max(SCORE_FLOOR, min(SCORE_CEILING, score))
         success = score >= 0.5
     finally:
         env.close()
