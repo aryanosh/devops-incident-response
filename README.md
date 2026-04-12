@@ -3,7 +3,7 @@ title: DevOps Incident Response OpenEnv
 emoji: "🚨"
 sdk: docker
 pinned: false
-app_port: 7860
+app_port: 8000
 tags:
   - openenv
   - devops
@@ -33,7 +33,7 @@ The environment is containerized for local testing and Hugging Face Space deploy
 
 ```bash
 docker build -t devops_incident_env .
-docker run -p 7860:7860 devops_incident_env
+docker run -p 8000:8000 devops_incident_env
 ```
 
 ### 2. Run the Evaluation Baseline
@@ -78,8 +78,8 @@ Below is a successful local trace on the hard task.
 [STEP] step=2 action=query_metrics(database) reward=0.04 done=false error=null
 [STEP] step=3 action=diagnose(database) reward=0.08 done=false error=null
 [STEP] step=4 action=apply_fix(database) reward=0.12 done=false error=null
-[STEP] step=5 action=verify_health(database) reward=0.99 done=true error=null
-[END] success=true steps=5 rewards=0.04,0.04,0.08,0.12,0.99
+[STEP] step=5 action=verify_health(database) reward=0.00 done=true error=null
+[END] success=true steps=5 rewards=0.04,0.04,0.08,0.12,0.00
 ```
 
 ## Project Structure
