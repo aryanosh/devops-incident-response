@@ -34,8 +34,8 @@ BENCHMARK = "devops_incident_env"
 
 
 def _display_reward(value: float) -> float:
-    # Keep printed rewards strictly below 1.00 so 2dp formatting never rounds up to 1.00.
-    return max(0.01, min(0.99, float(value)))
+    # Keep printed rewards strictly within (0, 1) for validator parsing.
+    return max(0.001, min(0.999, float(value)))
 
 
 def log_start(task: str, env: str, model: str) -> None:
@@ -46,13 +46,13 @@ def log_step(step: int, action: str, reward: float, done: bool, error: Optional[
     error_value = error if error else "null"
     shown_reward = _display_reward(reward)
     print(
-        f"[STEP] step={step} action={action} reward={shown_reward:.2f} done={str(done).lower()} error={error_value}",
+        f"[STEP] step={step} action={action} reward={shown_reward:.3f} done={str(done).lower()} error={error_value}",
         flush=True,
     )
 
 
 def log_end(success: bool, steps: int, rewards: List[float]) -> None:
-    rewards_text = ",".join(f"{_display_reward(reward):.2f}" for reward in rewards)
+    rewards_text = ",".join(f"{_display_reward(reward):.3f}" for reward in rewards)
     print(
         f"[END] success={str(success).lower()} steps={steps} rewards={rewards_text}",
         flush=True,
@@ -302,13 +302,13 @@ def run_task(agent: DevOpsAgent, task: Dict[str, Any]) -> float:
             try:
                 result = env.step(action_dict)
             except Exception as exc:
-                rewards.append(0.0)
+                rewards.append(0.001)
                 steps_taken = step
-                log_step(step, action_string, 0.0, True, str(exc))
+                log_step(step, action_string, 0.001, True, str(exc))
                 break
 
             observation = result["observation"]
-            reward = max(0.0, min(1.0, float(result.get("reward", 0.0))))
+            reward = max(0.001, min(0.999, float(result.get("reward", 0.001))))
             done = bool(result.get("done", False))
             latest_state = env.state()
             error = latest_state.get("last_action_error")

@@ -149,7 +149,7 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Envir
             success=True,
             message="Begin by reviewing active alerts and investigating the most critical service.",
             step_number=0,
-            reward=0.0,
+            reward=0.001,
             done=False,
             metadata={
                 "task_id": self._state.task_id,
@@ -172,7 +172,7 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Envir
                 success=False,
                 message="Reset the environment to start a new task.",
                 step_number=self._state.step_count,
-                reward=0.0,
+                reward=0.001,
                 done=True,
                 metadata={
                     "task_id": self._state.task_id,
@@ -215,7 +215,7 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Envir
         elif action_type == "verify_health":
             action_result, message, reward, success = self._handle_verify_health(action.service)
 
-        reward = round(max(0.0, min(1.0, reward)), 3)
+        reward = round(max(0.001, min(0.999, reward)), 3)
         self._append_action_history(action, reward, success)
         self._state.trajectory_reward = round(
             max(-0.999, min(0.999, self._state.trajectory_reward + reward)),
@@ -233,8 +233,8 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Envir
             final_score, details = self.grade()
             self._state.final_score = final_score
             self._state.final_details = details
-            # Keep step reward at 0.0; final score goes in info dict instead
-            step_reward = 0.0  # Episode end gets no incremental step reward
+            # Keep a minimal positive terminal step reward for strict open-interval validators.
+            step_reward = 0.001
         else:
             step_reward = reward
 

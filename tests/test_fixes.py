@@ -66,8 +66,8 @@ class TestRewardArchitecture:
             result = env.step(action)
             
             if result.done:
-                # Final step should have step_reward=0.0, but final_score in info
-                assert result.reward == 0.0, "Final step reward should be 0.0"
+                # Final step keeps a minimal positive reward for strict open-interval validators.
+                assert result.reward == 0.001, "Final step reward should be 0.001"
                 assert result.metadata.get("grader_score") is not None, "Final score should be in metadata"
                 assert 0.001 <= result.metadata["grader_score"] <= 0.999, "Final score should be clamped"
                 break
@@ -106,7 +106,7 @@ class TestDestructiveActionDetection:
         
         state = env.state
         assert state.destructive_actions >= 1, "Wrong fix should be marked as destructive"
-        assert result.reward == 0.0, "Destructive action should get 0 reward"
+        assert result.reward == 0.001, "Destructive action should get minimal positive reward"
         assert not result.success, "Destructive action should fail"
     
     def test_double_fix_detected_as_destructive(self) -> None:
@@ -161,7 +161,7 @@ class TestDestructiveActionDetection:
         
         state = env.state
         assert state.destructive_actions >= 1, "Fix on healthy service should be destructive"
-        assert result.reward == 0.0, "Destructive action should get 0 reward"
+        assert result.reward == 0.001, "Destructive action should get minimal positive reward"
 
 
 # ============================================================================
