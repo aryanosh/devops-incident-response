@@ -125,6 +125,5 @@ devops_incident_env/
 - Dependency-aware reasoning: agents are rewarded for tracing root causes rather than patching surface symptoms.
 - Anti-abuse reward shaping: invalid, redundant, and destructive actions do not earn positive reward and reduce grading quality.
 - Strict typed schemas: actions, observations, tasks, and state are bounded by Pydantic models.
-- Lightweight deployment: Docker image exposes port `7860` and supports validator-friendly routes.
 - Lightweight deployment: Docker image exposes port `8000` and supports validator-friendly routes.
 - Submission-safe inference: `inference.py` uses the OpenAI Client, requires `HF_TOKEN`, and prints only the required structured stdout lines.

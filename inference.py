@@ -165,15 +165,20 @@ class DevOpsAgent:
         self.executed: List[Dict[str, Any]] = []
         self.client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN, timeout=30.0, max_retries=2)
         self.llm_fallback_count = 0
+        self.llm_failure_streak = 0
+        self.max_llm_failure_streak = 3
 
     def reset(self) -> None:
         self.history = []
         self.executed = []
+        self.llm_failure_streak = 0
 
     def choose_action(self, observation: Dict[str, Any], state_dict: Dict[str, Any]) -> Dict[str, Any]:
-        llm_action = self._query_llm(observation)
+        llm_action = self._query_llm(observation, state_dict)
         if llm_action is not None:
+            self.llm_failure_streak = 0
             return llm_action
+        self.llm_failure_streak += 1
         self.llm_fallback_count += 1
         return choose_baseline_action(observation, state_dict).model_dump(exclude_none=True)
 
@@ -183,12 +188,16 @@ class DevOpsAgent:
             f"{action.get('action_type')}:{action.get('service', '-')}:reward={reward:.2f}:result={result[:80]}"
         )
 
-    def _query_llm(self, observation: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _query_llm(self, observation: Dict[str, Any], state_dict: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if self.client is None:
             logger.debug("LLM client not initialized (no HF_TOKEN)")
             return None
+
+        if self.llm_failure_streak >= self.max_llm_failure_streak:
+            logger.debug("Skipping LLM due to repeated failures; using baseline fallback")
+            return None
         
-        prompt = self._build_prompt(observation)
+        prompt = self._build_prompt(observation, state_dict)
         try:
             response = self.client.chat.completions.create(
                 model=MODEL_NAME,
@@ -217,13 +226,52 @@ class DevOpsAgent:
 
     def _system_prompt(self) -> str:
         return (
-            "You are an expert SRE. Return JSON only. "
-            "Valid actions are read_logs, query_metrics, diagnose, apply_fix, verify_health, "
-            "list_services, inspect_dependencies."
+            "You are an expert SRE incident commander. Analyze evidence incrementally and avoid destructive actions. "
+            "Prioritize root causes over symptoms by using alerts, logs, metrics, and dependency graph context. "
+            "For multi-root incidents, finish one root service end-to-end (investigate, diagnose, fix, verify) then proceed to the next unresolved root. "
+            "Return JSON only with keys: action_type, service, diagnosis (optional), fix (optional), reasoning. "
+            "Reasoning must include a confidence score like 'confidence=0.82'. "
+            "Valid action_type values are read_logs, query_metrics, diagnose, apply_fix, verify_health, list_services, inspect_dependencies."
         )
 
-    def _build_prompt(self, observation: Dict[str, Any]) -> str:
-        return json.dumps(observation, sort_keys=True)
+    def _build_prompt(self, observation: Dict[str, Any], state_dict: Dict[str, Any]) -> str:
+        root_services = state_dict.get("root_cause_services", [])
+        verified = state_dict.get("successful_verifications", [])
+        unresolved = [service for service in root_services if service not in verified]
+        recent_history = self.history[-5:]
+
+        prompt_payload = {
+            "objective": "Resolve the production incident safely and quickly.",
+            "policy": [
+                "Never apply fixes to healthy services.",
+                "Do not verify before a plausible fix unless explicitly gathering baseline health.",
+                "If multiple roots exist, prefer unresolved roots first.",
+            ],
+            "state_summary": {
+                "task_id": state_dict.get("task_id"),
+                "step_count": state_dict.get("step_count"),
+                "max_steps": state_dict.get("max_steps"),
+                "root_cause_services": root_services,
+                "unresolved_root_services": unresolved,
+                "last_action_error": state_dict.get("last_action_error"),
+            },
+            "recent_action_history": recent_history,
+            "observation": observation,
+            "output_schema": {
+                "action_type": "read_logs|query_metrics|diagnose|apply_fix|verify_health|list_services|inspect_dependencies",
+                "service": "service name",
+                "diagnosis": "required for diagnose",
+                "fix": "required for apply_fix",
+                "reasoning": "short rationale with confidence=0.xx",
+            },
+            "output_example": {
+                "action_type": "diagnose",
+                "service": "database",
+                "diagnosis": "disk_full",
+                "reasoning": "Repeated no-space errors and storage alerts point to disk_full. confidence=0.86",
+            },
+        }
+        return json.dumps(prompt_payload, sort_keys=True)
 
 
 def action_to_string(action: Dict[str, Any]) -> str:

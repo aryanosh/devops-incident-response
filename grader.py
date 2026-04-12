@@ -27,9 +27,6 @@ except ImportError:
         SCORE_FLOOR,
     )
 
-SCORE_FLOOR = 0.001
-SCORE_CEILING = 0.999
-
 
 def _strict_score(value: float) -> float:
     score = round(float(value), 3)

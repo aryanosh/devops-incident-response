@@ -259,7 +259,7 @@ SCENARIO_CONFIGS: Dict[str, Dict[str, object]] = {
             "exhausting its connection pool, creating a multi-root incident that "
             "requires tracing both failure paths before the platform fully recovers."
         ),
-        "difficulty": "hard",
+        "difficulty": "expert",
         "max_steps": 14,
         "optimal_steps": 8,
         "root_cause_services": ["database", "payment_service"],

@@ -73,6 +73,7 @@ def choose_action(observation: Dict[str, Any], state_dict: Dict[str, Any]) -> In
     fixes_applied = state_dict.get("fixes_applied", [])
     successful_verifications = set(state_dict.get("successful_verifications", []))
     root_cause_services = list(state_dict.get("root_cause_services", []))
+    dependencies_inspected = set(state_dict.get("dependencies_inspected", []))
 
     target_service = next(
         (service for service in root_cause_services if service not in successful_verifications),
@@ -81,18 +82,32 @@ def choose_action(observation: Dict[str, Any], state_dict: Dict[str, Any]) -> In
 
     inferred_diagnosis, inferred_fix = _expected_from_text(text)
 
+    unresolved_roots = [service for service in root_cause_services if service not in successful_verifications]
+    if len(unresolved_roots) > 1 and target_service not in dependencies_inspected:
+        return IncidentAction(
+            action_type="inspect_dependencies",
+            service=target_service,
+            reasoning=(
+                f"Map dependencies before remediation for multi-root incident at {target_service}. "
+                "confidence=0.76"
+            ),
+        )
+
     if target_service not in services_investigated:
         return IncidentAction(
             action_type="read_logs",
             service=target_service,
-            reasoning=f"Inspect logs for the highest-priority service: {target_service}.",
+            reasoning=f"Inspect logs for the highest-priority service: {target_service}. confidence=0.79",
         )
 
     if target_service not in metrics_queried:
         return IncidentAction(
             action_type="query_metrics",
             service=target_service,
-            reasoning=f"Check service metrics to confirm the nature of the incident on {target_service}.",
+            reasoning=(
+                f"Check service metrics to confirm the nature of the incident on {target_service}. "
+                "confidence=0.77"
+            ),
         )
 
     already_diagnosed = any(d.get("service") == target_service for d in diagnoses)
@@ -101,7 +116,10 @@ def choose_action(observation: Dict[str, Any], state_dict: Dict[str, Any]) -> In
             action_type="diagnose",
             service=target_service,
             diagnosis=inferred_diagnosis,
-            reasoning=f"Symptoms strongly suggest {inferred_diagnosis} on {target_service}.",
+            reasoning=(
+                f"Symptoms strongly suggest {inferred_diagnosis} on {target_service}. "
+                "confidence=0.84"
+            ),
         )
 
     already_fixed = any(f.get("service") == target_service and f.get("success") for f in fixes_applied)
@@ -110,18 +128,27 @@ def choose_action(observation: Dict[str, Any], state_dict: Dict[str, Any]) -> In
             action_type="apply_fix",
             service=target_service,
             fix=inferred_fix,
-            reasoning=f"Apply the most likely corrective action {inferred_fix} to {target_service}.",
+            reasoning=(
+                f"Apply the most likely corrective action {inferred_fix} to {target_service}. "
+                "confidence=0.81"
+            ),
         )
 
     if target_service not in successful_verifications:
         return IncidentAction(
             action_type="verify_health",
             service=target_service,
-            reasoning=f"Verify whether {target_service} is healthy after investigation or remediation.",
+            reasoning=(
+                f"Verify whether {target_service} is healthy after investigation or remediation. "
+                "confidence=0.88"
+            ),
         )
 
     return IncidentAction(
         action_type="inspect_dependencies",
         service=target_service,
-        reasoning=f"Inspect dependency relationships around {target_service} to locate remaining root causes.",
+        reasoning=(
+            f"Inspect dependency relationships around {target_service} to locate remaining root causes. "
+            "confidence=0.72"
+        ),
     )

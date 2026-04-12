@@ -126,7 +126,7 @@ class TaskDefinition(BaseModel):
     task_id: str
     name: str
     description: str
-    difficulty: Literal["easy", "medium", "hard"]
+    difficulty: Literal["easy", "medium", "hard", "expert"]
     max_steps: int
 
 
