@@ -155,7 +155,7 @@ All routes conform to the OpenEnv HTTP specification.
 
 ## Reward System
 
-The environment emits dense per-step rewards and a separate deterministic final grader score. **All rewards and scores are strictly bounded within `(0.05, 0.95)`** — never exactly `0` or `1`.
+The environment emits dense per-step rewards and a separate deterministic final grader score. **All rewards and scores are strictly bounded within `(0,1)`** — never exactly `0` or `1`.
 
 ### Step Rewards
 
