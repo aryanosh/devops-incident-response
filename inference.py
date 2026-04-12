@@ -53,10 +53,12 @@ def log_step(step: int, action: str, reward: float, done: bool, error: Optional[
     )
 
 
-def log_end(success: bool, steps: int, rewards: List[float]) -> None:
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_text = ",".join(f"{_display_reward(reward):.3f}" for reward in rewards)
+    # score clamped to [0.0, 1.0] per OpenEnv sample spec
+    safe_score = min(max(float(score), 0.0), 1.0)
     print(
-        f"[END] success={str(success).lower()} steps={steps} rewards={rewards_text}",
+        f"[END] success={str(success).lower()} steps={steps} score={safe_score:.3f} rewards={rewards_text}",
         flush=True,
     )
 
@@ -327,7 +329,7 @@ def run_task(agent: DevOpsAgent, task: Dict[str, Any]) -> float:
         success = score >= 0.5
     finally:
         env.close()
-        log_end(success=success, steps=steps_taken, rewards=rewards)
+        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
     return score
 

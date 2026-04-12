@@ -5,7 +5,7 @@
 [STEP] step=4 action=diagnose(api_gateway) reward=0.080 done=false error=null
 [STEP] step=5 action=apply_fix(api_gateway) reward=0.120 done=false error=null
 [STEP] step=6 action=verify_health(api_gateway) reward=0.050 done=true error=null
-[END] success=true steps=6 rewards=0.050,0.050,0.050,0.080,0.120,0.050
+[END] success=true steps=6 score=0.880 rewards=0.050,0.050,0.050,0.080,0.120,0.050
 [START] task=medium_task env=devops_incident_env model=Qwen/Qwen2.5-72B-Instruct
 [STEP] step=1 action=list_services() reward=0.050 done=false error=null
 [STEP] step=2 action=read_logs(order_service) reward=0.050 done=false error=null
@@ -13,7 +13,7 @@
 [STEP] step=4 action=diagnose(order_service) reward=0.080 done=false error=null
 [STEP] step=5 action=apply_fix(order_service) reward=0.120 done=false error=null
 [STEP] step=6 action=verify_health(order_service) reward=0.050 done=true error=null
-[END] success=true steps=6 rewards=0.050,0.050,0.050,0.080,0.120,0.050
+[END] success=true steps=6 score=0.880 rewards=0.050,0.050,0.050,0.080,0.120,0.050
 [START] task=hard_task env=devops_incident_env model=Qwen/Qwen2.5-72B-Instruct
 [STEP] step=1 action=list_services() reward=0.050 done=false error=null
 [STEP] step=2 action=read_logs(api_gateway) reward=0.050 done=false error=null
@@ -23,7 +23,7 @@
 [STEP] step=6 action=diagnose(database) reward=0.080 done=false error=null
 [STEP] step=7 action=apply_fix(database) reward=0.120 done=false error=null
 [STEP] step=8 action=verify_health(database) reward=0.050 done=true error=null
-[END] success=true steps=8 rewards=0.050,0.050,0.050,0.050,0.050,0.080,0.120,0.050
+[END] success=true steps=8 score=0.880 rewards=0.050,0.050,0.050,0.050,0.050,0.080,0.120,0.050
 [START] task=expert_task env=devops_incident_env model=Qwen/Qwen2.5-72B-Instruct
 [STEP] step=1 action=list_services() reward=0.050 done=false error=null
 [STEP] step=2 action=read_logs(api_gateway) reward=0.050 done=false error=null
@@ -39,4 +39,4 @@
 [STEP] step=12 action=diagnose(payment_service) reward=0.080 done=false error=null
 [STEP] step=13 action=apply_fix(payment_service) reward=0.120 done=false error=null
 [STEP] step=14 action=verify_health(payment_service) reward=0.050 done=true error=null
-[END] success=true steps=14 rewards=0.050,0.050,0.050,0.050,0.050,0.050,0.080,0.120,0.050,0.050,0.050,0.080,0.120,0.050
+[END] success=true steps=14 score=0.880 rewards=0.050,0.050,0.050,0.050,0.050,0.050,0.080,0.120,0.050,0.050,0.050,0.080,0.120,0.050
