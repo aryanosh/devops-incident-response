@@ -72,9 +72,9 @@ The environment uses dense step rewards plus a separate deterministic final grad
 | Correct diagnosis | `+0.08` | Rewards identifying the actual failure mode. |
 | Correct fix | `+0.12` | Rewards selecting the right remediation for the right service. |
 | Successful verification | `+0.04` | Requires explicit proof that the service recovered. |
-| Invalid or wrong action | `0.00` | Wrong, invalid, or destructive actions receive no positive reward and reduce overall grading quality. |
+| Invalid or wrong action | `0.05` | Wrong, invalid, or destructive actions receive no positive reward and reduce overall grading quality. |
 
-Emitted step rewards are kept in the valid `0.0` to `0.99` display range, and final scores are always strictly inside `(0, 1)` and mapped to `[0.001, 0.999]`.
+Emitted step rewards are kept in the valid `0.05` to `0.95` range, and final scores are always strictly inside `(0, 1)` and mapped to `[0.05, 0.95]`.
 
 The evaluation script emits only the required three stdout line types, in order: `[START]`, `[STEP]`, and `[END]`.
 
@@ -88,11 +88,11 @@ Below is a successful local trace on the hard task.
 [STEP] step=2 action=query_metrics(database) reward=0.04 done=false error=null
 [STEP] step=3 action=diagnose(database) reward=0.08 done=false error=null
 [STEP] step=4 action=apply_fix(database) reward=0.12 done=false error=null
-[STEP] step=5 action=verify_health(database) reward=0.00 done=true error=null
-[END] success=true steps=5 rewards=0.04,0.04,0.08,0.12,0.00
+[STEP] step=5 action=verify_health(database) reward=0.05 done=true error=null
+[END] success=true steps=5 rewards=0.04,0.04,0.08,0.12,0.05
 ```
 
-Note: terminal `step` reward is intentionally `0.00` when the episode ends because final grading is emitted as `final_score`/`grader_score` in state/info. Intermediate verification reward is still `+0.04` when the episode continues.
+Note: terminal `step` reward is set to `0.05` (the floor value) when the episode ends because final grading is emitted as `final_score`/`grader_score` in state/info. Intermediate verification reward is still `+0.04` when the episode continues.
 
 ## Validation Artifacts
 
