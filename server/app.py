@@ -7,10 +7,12 @@ from fastapi import FastAPI, Request
 
 try:
     from ..baseline import choose_action
+    from ..constants import SCORE_FLOOR
     from ..models import IncidentAction, IncidentObservation, ResetRequest, StepRequest
     from .environment import IncidentEnvironment
 except ImportError:
     from baseline import choose_action
+    from constants import SCORE_FLOOR
     from models import IncidentAction, IncidentObservation, ResetRequest, StepRequest
     from server.environment import IncidentEnvironment
 
@@ -80,9 +82,9 @@ def step(request: Request, payload: Dict[str, Any]) -> Dict[str, Any]:
 def state(request: Request) -> Dict[str, Any]:
     env = _get_environment(request)
     state_payload = env.state().model_dump()
-    # Keep numeric output stable for validators that always check [0,1] range.
+    # Keep numeric output stable for validators that require strict (0,1) scores.
     if state_payload.get("final_score") is None:
-        state_payload["final_score"] = 0.0
+        state_payload["final_score"] = SCORE_FLOOR
     return state_payload
 
 

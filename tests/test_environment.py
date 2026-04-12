@@ -75,3 +75,10 @@ def test_health_endpoint_reports_healthy() -> None:
     client = TestClient(app)
     payload = client.get("/health").json()
     assert payload == {"status": "healthy"}
+
+
+def test_state_endpoint_final_score_is_strictly_inside_zero_one() -> None:
+    client = TestClient(app)
+    client.post("/reset", json={"task_id": "easy_task", "seed": 7})
+    payload = client.get("/state").json()
+    assert 0.0 < payload["final_score"] < 1.0
