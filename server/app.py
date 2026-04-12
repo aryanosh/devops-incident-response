@@ -33,6 +33,16 @@ app = create_app(
 )
 
 
+def _strict_unit(value: Any, floor: float = 0.001, ceiling: float = 0.999) -> float:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return floor
+    if score != score:  # NaN guard
+        return floor
+    return max(floor, min(ceiling, score))
+
+
 def _remove_route(path: str, method: str) -> None:
     method = method.upper()
     app.router.routes = [
@@ -54,11 +64,16 @@ _remove_route("/state", "GET")
 
 def _wrap_observation(observation: IncidentObservation) -> Dict[str, Any]:
     payload = observation.model_dump(exclude={"reward", "done", "metadata"})
+    info = dict(observation.metadata or {})
+    if "grader_score" in info:
+        info["grader_score"] = _strict_unit(info.get("grader_score"))
+    if "trajectory_reward" in info:
+        info["trajectory_reward"] = _strict_unit(info.get("trajectory_reward"))
     return {
         "observation": payload,
         "reward": observation.reward,
         "done": observation.done,
-        "info": observation.metadata,
+        "info": info,
     }
 
 
@@ -95,14 +110,16 @@ def step(payload: Dict[str, Any]) -> Dict[str, Any]:
 @app.get("/state")
 def state() -> Dict[str, Any]:
     payload = _ENV.state.model_dump()
-    payload["final_score"] = max(0.001, min(0.999, float(payload.get("final_score") or 0.001)))
+    payload["final_score"] = _strict_unit(payload.get("final_score") or 0.001)
+    payload["trajectory_reward"] = _strict_unit(payload.get("trajectory_reward") or 0.001)
     return payload
 
 
 @app.get("/grader")
 def grader() -> Dict[str, Any]:
     score, details = _ENV.grade()
-    score = max(0.001, min(0.999, float(score)))
+    score = _strict_unit(score)
+    details = {key: _strict_unit(value) for key, value in details.items()}
     return {
         "task_id": _ENV.state.task_id,
         "score": score,
