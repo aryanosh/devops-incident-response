@@ -94,12 +94,15 @@ def step(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 @app.get("/state")
 def state() -> Dict[str, Any]:
-    return _ENV.state.model_dump()
+    payload = _ENV.state.model_dump()
+    payload["final_score"] = max(0.001, min(0.999, float(payload.get("final_score") or 0.001)))
+    return payload
 
 
 @app.get("/grader")
 def grader() -> Dict[str, Any]:
     score, details = _ENV.grade()
+    score = max(0.001, min(0.999, float(score)))
     return {
         "task_id": _ENV.state.task_id,
         "score": score,

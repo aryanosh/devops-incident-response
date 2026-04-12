@@ -30,11 +30,9 @@ except ImportError:
 
 def _strict_score(value: float) -> float:
     score = round(float(value), 3)
-    if score <= SCORE_FLOOR:
+    if score != score:  # NaN guard
         return SCORE_FLOOR
-    if score >= SCORE_CEILING:
-        return SCORE_CEILING
-    return score
+    return max(SCORE_FLOOR, min(SCORE_CEILING, score if score > 0 else SCORE_FLOOR))
 
 
 def _to_dict(state: Any) -> Dict[str, Any]:
