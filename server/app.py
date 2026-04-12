@@ -7,11 +7,11 @@ from fastapi import FastAPI, Request
 
 try:
     from ..baseline import choose_action
-    from ..models import IncidentObservation, ResetRequest, StepRequest
+    from ..models import IncidentAction, IncidentObservation, ResetRequest, StepRequest
     from .environment import IncidentEnvironment
 except ImportError:
     from baseline import choose_action
-    from models import IncidentObservation, ResetRequest, StepRequest
+    from models import IncidentAction, IncidentObservation, ResetRequest, StepRequest
     from server.environment import IncidentEnvironment
 
 app = FastAPI(title="devops_incident_env", version="1.0.0")
@@ -68,15 +68,22 @@ def reset(request: Request, payload: ResetRequest | None = None) -> Dict[str, An
 
 
 @app.post("/step")
-def step(request: Request, payload: StepRequest) -> Dict[str, Any]:
+def step(request: Request, payload: Dict[str, Any]) -> Dict[str, Any]:
     env = _get_environment(request)
-    return env.step(payload.action).model_dump()
+    # Accept both OpenEnv-style wrapped payloads and direct action payloads.
+    action_payload = payload.get("action") if isinstance(payload, dict) and "action" in payload else payload
+    action = IncidentAction(**action_payload)
+    return env.step(action).model_dump()
 
 
 @app.get("/state")
 def state(request: Request) -> Dict[str, Any]:
     env = _get_environment(request)
-    return env.state().model_dump()
+    state_payload = env.state().model_dump()
+    # Keep numeric output stable for validators that always check [0,1] range.
+    if state_payload.get("final_score") is None:
+        state_payload["final_score"] = 0.0
+    return state_payload
 
 
 @app.get("/grader")
