@@ -1,26 +1,50 @@
 [
   {
     "task_id": "easy_task",
-    "difficulty": "easy",
-    "baseline_score": 0.800,
-    "llm_score": 0.880
+    "score": 0.8,
+    "steps": 7,
+    "details": {
+      "root_cause_identification": 0.95,
+      "resolution": 0.95,
+      "efficiency": 0.2,
+      "safety": 0.95,
+      "score": 0.8
+    }
   },
   {
     "task_id": "medium_task",
-    "difficulty": "medium",
-    "baseline_score": 0.860,
-    "llm_score": 0.880
+    "score": 0.86,
+    "steps": 7,
+    "details": {
+      "root_cause_identification": 0.95,
+      "resolution": 0.95,
+      "efficiency": 0.5,
+      "safety": 0.95,
+      "score": 0.86
+    }
   },
   {
     "task_id": "hard_task",
-    "difficulty": "hard",
-    "baseline_score": 0.117,
-    "llm_score": 0.880
+    "score": 0.117,
+    "steps": 12,
+    "details": {
+      "root_cause_identification": 0.05,
+      "resolution": 0.05,
+      "efficiency": 0.05,
+      "safety": 0.5,
+      "score": 0.117
+    }
   },
   {
     "task_id": "expert_task",
-    "difficulty": "expert",
-    "baseline_score": 0.117,
-    "llm_score": 0.880
+    "score": 0.117,
+    "steps": 14,
+    "details": {
+      "root_cause_identification": 0.05,
+      "resolution": 0.05,
+      "efficiency": 0.05,
+      "safety": 0.5,
+      "score": 0.117
+    }
   }
 ]

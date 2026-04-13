@@ -12,14 +12,21 @@ tags:
   - pytorch
 ---
 
-# DevOps Incident Response OpenEnv
+# DevOps Incident Response — OpenEnv
 
 > **A production-grade RL environment for benchmarking AI agents on real-world SRE incident triage.**
 
-This environment stress-tests AI models on multi-service debugging, dependency chain tracing, and safe remediation — the three skills that separate a great SRE from a reactive one. Built for the [OpenEnv](https://huggingface.co/openenv) standard with deterministic grading, strict Pydantic schemas, and a zero-config Docker deployment.
+This environment stress-tests AI agents on multi-service debugging, dependency chain tracing, and safe remediation — the three skills that separate a great SRE from a reactive one. Built for the [OpenEnv](https://huggingface.co/openenv) standard with deterministic grading, strict Pydantic schemas, and a zero-config Docker deployment.
 
 [![HuggingFace Space](https://img.shields.io/badge/🤗%20Live%20Demo-HuggingFace%20Space-yellow)](https://huggingface.co/spaces/aryanosh/devops-incident-response)
 [![GitHub](https://img.shields.io/badge/GitHub-Source-black)](https://github.com/aryanosh/devops-incident-response)
+[![Tests](https://img.shields.io/badge/tests-22%20passed-brightgreen)](#testing)
+
+---
+
+## Live UI
+
+The Gradio dashboard is served directly on **port 8000** alongside the API (mounted at `/ui`). Browser requests to `/` are automatically redirected to the dashboard; automated evaluators receive the JSON manifest.
 
 ---
 
@@ -60,7 +67,9 @@ docker build -t devops_incident_env .
 docker run -p 8000:8000 devops_incident_env
 ```
 
-The server starts at `http://localhost:8000`. Visit `/docs` for the interactive Swagger UI.
+- API + UI both available at `http://localhost:8000`
+- Swagger docs at `http://localhost:8000/docs`
+- Dashboard UI at `http://localhost:8000/ui`
 
 ### 2. Run the Evaluation Agent
 
@@ -75,21 +84,31 @@ python inference.py
 
 `HF_TOKEN` is required. The script raises immediately if it is missing.
 
-### 3. Run Tests
+### 3. Run the Baseline Evaluation
+
+```bash
+python eval_baseline.py
+```
+
+Runs the rule-based baseline across all 4 tasks and prints per-task scores.
+
+### 4. Run Tests
 
 ```bash
 pytest tests/ -v
+# or with uv:
+uv run pytest -v
 ```
 
 ---
 
 ## API Reference
 
-All routes conform to the OpenEnv HTTP specification.
+All routes conform to the OpenEnv HTTP specification. Both the JSON API and the Gradio UI are served on **port 8000**.
 
 | Method | Route | Description |
 |---|---|---|
-| `GET` | `/` | Environment manifest |
+| `GET` | `/` | Environment manifest (JSON for evaluators, redirect for browsers) |
 | `GET` | `/health` | Liveness check — returns `{"status": "healthy"}` |
 | `GET` | `/tasks` | List all 4 task definitions with metadata |
 | `GET` | `/manifest` | Full environment schema |
@@ -98,7 +117,8 @@ All routes conform to the OpenEnv HTTP specification.
 | `GET` | `/state` | Current episode state snapshot |
 | `GET` | `/grader` | Final grader score for the current episode |
 | `GET` | `/baseline` | Next recommended action from the rule-based baseline |
-| `GET` | `/sample_action` | Alias for `/baseline` |
+| `GET` | `/sample_action` | Example valid action payload |
+| `GET` | `/ui` | Gradio dashboard (browser) |
 
 ---
 
@@ -155,7 +175,7 @@ All routes conform to the OpenEnv HTTP specification.
 
 ## Reward System
 
-The environment emits dense per-step rewards and a separate deterministic final grader score. **All rewards and scores are strictly bounded within `(0,1)`** — never exactly `0` or `1`.
+The environment emits dense per-step rewards and a separate deterministic final grader score. **All rewards and scores are strictly bounded within `(0.001, 0.999)`** — never exactly `0` or `1`.
 
 ### Step Rewards
 
@@ -169,13 +189,11 @@ The environment emits dense per-step rewards and a separate deterministic final 
 | `verify_health` (post-fix) | `+0.04` | Confirmed recovery |
 | `inspect_dependencies` (first time) | `+0.02` | New service traversal |
 | `list_services` (first call) | `+0.015` | One-time discovery reward |
-| Wrong/invalid/destructive action | `+0.05` (floor) | Penalized via grader safety score |
-
-Step rewards are clamped to `[0.05, 0.95]` before emission. The terminal step always emits the floor reward `0.05`; the definitive episode score comes from the grader.
+| Wrong / invalid / destructive action | `-0.03` penalty | Applied via grader safety score |
 
 ### Final Grader Score
 
-The grader combines four weighted dimensions into a final score in `(0.05, 0.95)`:
+The grader combines four weighted dimensions into a final score clamped to `(0.001, 0.999)`:
 
 | Component | Weight | What It Measures |
 |---|---|---|
@@ -188,7 +206,22 @@ The grader combines four weighted dimensions into a final score in `(0.05, 0.95)
 final_score = 0.35 × root_id + 0.30 × resolution + 0.20 × efficiency + 0.15 × safety
 ```
 
-All component scores are clamped to `[0.05, 0.95]`. The total is then clamped identically.
+---
+
+## Baseline Performance
+
+Rule-based baseline scores across all 4 tasks (`eval_baseline.py`):
+
+| Task | Difficulty | Baseline Score | Steps |
+|---|---|---|---|
+| `easy_task` | 🟢 Easy | `0.800` | 7 |
+| `medium_task` | 🟡 Medium | `0.860` | 7 |
+| `hard_task` | 🔴 Hard | `0.117` | 12 |
+| `expert_task` | 🟣 Expert | `0.117` | 14 |
+
+The baseline scores acceptably on Easy/Medium (surface symptom matches root cause) but fails sharply on Hard/Expert — the environment correctly requires dependency-chain tracing, which blind remediation cannot accomplish.
+
+Full score details: [`outputs/task_score_summary.json`](outputs/task_score_summary.json)
 
 ---
 
@@ -209,27 +242,38 @@ Successful hard task run (Qwen/Qwen2.5-72B-Instruct):
 [END] success=true steps=8 rewards=0.050,0.050,0.050,0.050,0.050,0.080,0.120,0.050
 ```
 
-The agent correctly resists patching `api_gateway` (the visible alert) and traces the dependency chain to `database` as the true root cause.
+The agent correctly resists patching `api_gateway` (the visible alert) and traces the dependency chain to `database`.
 
 ---
 
-## Agent Performance Comparison
+## Testing
 
-To demonstrate the environment's discriminative power and exploit resistance, here is a comparison between a reactive "dumb" baseline and a reasoning LLM agent (`Qwen2.5-72B-Instruct` with the improved system prompt):
+```bash
+uv run pytest -v
+```
 
-| Task | Difficulty | Reactive Baseline | LLM Agent |
-|---|---|---|---|
-| `easy_task` | 🟢 Easy | `0.800` | `0.880` |
-| `medium_task` | 🟡 Medium | `0.860` | `0.880` |
-| `hard_task` | 🔴 Hard | `0.117` | `0.880` |
-| `expert_task` | 🟣 Expert | `0.117` | `0.880` |
+```
+tests/test_environment.py::test_tasks_endpoint_lists_four_tasks              PASSED
+tests/test_environment.py::test_reset_and_state_are_consistent               PASSED
+tests/test_environment.py::test_deterministic_logs_for_same_seed             PASSED
+tests/test_environment.py::test_scores_are_strictly_inside_zero_one         PASSED
+tests/test_environment.py::test_grader_endpoint_exposes_clamped_score       PASSED
+tests/test_environment.py::test_health_endpoint_reports_healthy              PASSED
+tests/test_environment.py::test_state_endpoint_final_score_is_strictly_...  PASSED
+tests/test_environment.py::test_grader_details_are_strictly_inside_...      PASSED
+tests/test_fixes.py::TestConcurrentEnvironmentIsolation::...                 PASSED
+tests/test_fixes.py::TestRewardArchitecture::...                             PASSED  (×2)
+tests/test_fixes.py::TestDestructiveActionDetection::...                     PASSED  (×3)
+tests/test_fixes.py::TestDependencyValidation::...                           PASSED
+tests/test_fixes.py::TestModeMappingValidation::...                          PASSED
+tests/test_fixes.py::TestInputValidation::...                                PASSED
+tests/test_fixes.py::TestGraderWithConstants::...                            PASSED
+tests/test_fixes.py::TestTimeoutConfiguration::...                           PASSED
+tests/test_fixes.py::TestLogging::...                                        PASSED
+tests/test_fixes.py::TestEndToEndIntegration::...                            PASSED  (×2)
 
-*Note: The reactive baseline scores acceptably on Easy and Medium tasks since the surface symptom matches the root cause. However, it fails drastically on Hard and Expert tasks because the environment requires tracing dependencies from the alert to the true root cause, and heavily penalizes blind remediation attempts.*
-
-Committed run artifacts are in `outputs/` for evaluator verification:
-
-- `outputs/inference_baseline_run.txt` — full `[START]`/`[STEP]`/`[END]` trace across all 4 tasks
-- `outputs/task_score_summary.json` — per-task final grader scores
+======================== 22 passed ========================
+```
 
 ---
 
@@ -238,24 +282,27 @@ Committed run artifacts are in `outputs/` for evaluator verification:
 ```text
 devops_incident_env/
 ├── server/
-│   ├── app.py            # FastAPI app — all HTTP routes + score clamping middleware
+│   ├── app.py            # FastAPI app — all HTTP routes + Gradio mount + score clamping
 │   └── environment.py    # Core RL environment: step logic, reward emission, state tracking
+├── gradio_app.py         # Gradio dashboard UI (mounted at /ui, exported as `app`)
 ├── tasks.py              # Scenario configs, service graph, log/metric templates
 ├── grader.py             # Deterministic final-score formula (4-component weighted sum)
 ├── models.py             # Pydantic schemas: Action, Observation, State, Task
-├── constants.py          # All reward values, grader weights, score bounds (SCORE_FLOOR=0.05, SCORE_CEILING=0.95)
-├── baseline.py           # Rule-based baseline agent (used as inference fallback)
-├── inference.py          # Evaluation runner: LLM agent + structured [START]/[STEP]/[END] stdout
+├── constants.py          # All reward values, grader weights, score bounds
+├── baseline.py           # Rule-based baseline agent
+├── eval_baseline.py      # Quick baseline runner across all 4 tasks
+├── inference.py          # Full evaluation runner: LLM agent + structured stdout
 ├── client.py             # Thin HTTP client for remote environment interaction
 ├── openenv.yaml          # OpenEnv spec manifest
 ├── requirements.txt      # Python dependencies
+├── pyproject.toml        # Package config + uv deps
 ├── Dockerfile            # Container definition (python:3.11-slim, port 8000)
 ├── outputs/
 │   ├── inference_baseline_run.txt   # Committed baseline trace
-│   └── task_score_summary.json      # Committed score snapshot
+│   └── task_score_summary.json      # Per-task final grader scores
 └── tests/
     ├── test_environment.py          # Environment lifecycle and state tests
-    └── test_fixes.py                # Per-scenario fix and grader correctness tests
+    └── test_fixes.py                # Fix validation, grader, and integration tests
 ```
 
 ---
@@ -266,13 +313,13 @@ devops_incident_env/
 
 **Dependency-aware reward shaping.** Investigating the right service in the dependency chain earns more than investigating the surface symptom. This teaches causal debugging, not symptom patching.
 
-**Strict score bounds.** Every reward emitted by `/step` and every score returned by `/grader` is bounded to `(0.05, 0.95)`. No `0.0` or `1.0` is ever returned.
+**Strict score bounds.** Every reward from `/step` and every score from `/grader` is bounded to `(0.001, 0.999)`. No `0.0` or `1.0` is ever returned.
 
-**Anti-abuse mechanics.** Applying a wrong fix, fixing an already-healthy service, or repeating fixes counts as a destructive action. Each destructive action reduces the Safety component by 50%, creating a strong signal to avoid brute-force remediation.
+**Anti-abuse mechanics.** Applying a wrong fix, fixing an already-healthy service, or repeating fixes counts as a destructive action. Each reduces the Safety component by 50%.
 
-**Red herring separation.** Affected (downstream) services show plausible-looking failure modes — `high_latency`, `connection_pool_exhaustion` — to pressure-test the agent's ability to distinguish symptom from root cause.
+**Red herring separation.** Affected (downstream) services show plausible-looking failure modes (`high_latency`, `connection_pool_exhaustion`) to pressure-test causal vs. symptomatic reasoning.
 
-**Multi-root expert challenge.** The expert task requires resolving two independent root causes (`database` and `payment_service`) in a coordinated sequence. A partial fix is explicitly penalized in the Resolution component.
+**Multi-root expert challenge.** The expert task requires resolving two independent root causes in a coordinated sequence. A partial fix is explicitly penalized in Resolution.
 
 ---
 
