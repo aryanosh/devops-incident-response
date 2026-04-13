@@ -1,247 +1,601 @@
 import gradio as gr
-import requests
-import json
-import os
+import subprocess
+import threading
 import time
+import os
 
-API_URL = os.environ.get("API_URL", "http://localhost:8000")
-
-STATUS_EMOJIS = {
-    "healthy": "🟢",
-    "degraded": "🟡",
-    "critical": "🔴",
-    "down": "💀",
-    "recovering": "🔵"
+custom_css = """
+body, .gradio-container {
+    background-color: #0d1117 !important;
+    color: #c9d1d9 !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
 }
 
-SEVERITY_EMOJIS = {
-    "critical": "🚨",
-    "high": "🔥",
-    "medium": "⚠️",
-    "low": "ℹ️"
+/* Typography & Core Accents */
+h1, h2, h3, h4, h5, h6 { color: #c9d1d9 !important; }
+a { color: #58a6ff !important; text-decoration: none !important; }
+.text-red { color: #ff5555 !important; }
+.text-green { color: #3fb950 !important; }
+.text-yellow { color: #d29922 !important; }
+.text-orange { color: #f0883e !important; }
+.text-muted { color: #8b949e !important; }
+
+/* Badges */
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-family: monospace;
+    border-radius: 4px;
+    border: 1px solid #30363d;
+    margin-right: 8px;
+    margin-bottom: 8px;
+    color: #8b949e;
+}
+.badge-active { border-color: #ff5555; color: #ff5555; }
+
+/* Grid Layout */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-top: 30px;
+    margin-bottom: 30px;
+}
+.stat-box {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 16px;
+    position: relative;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+}
+.stat-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #8b949e;
+    margin-bottom: 8px;
+}
+.stat-value {
+    font-size: 28px;
+    font-family: monospace;
+    font-weight: 600;
 }
 
-SERVICES = [
-    "api_gateway", "order_service", "payment_service", "database", 
-    "cache", "inventory_service", "notification_service"
-]
+/* 2x2 Feature Grid */
+.feature-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 30px;
+}
+.feature-card {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 20px;
+}
+.feature-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #8b949e;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #30363d;
+    padding-bottom: 10px;
+}
 
-DIAGNOSES = [
-    "service_crash", "memory_leak", "disk_full", "connection_pool_exhaustion", 
-    "high_latency", "config_drift", "certificate_expired"
-]
+/* Task List Items */
+.task-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #2d333b;
+}
+.task-item:last-child { border-bottom: none; }
+.task-badge {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: monospace;
+    min-width: 45px;
+    text-align: center;
+    margin-right: 15px;
+}
+.task-easy { border: 1px solid #3fb950; color: #3fb950; background: rgba(63, 185, 80, 0.1); }
+.task-medium { border: 1px solid #d29922; color: #d29922; background: rgba(210, 153, 34, 0.1); }
+.task-hard { border: 1px solid #f0883e; color: #f0883e; background: rgba(240, 136, 62, 0.1); }
+.task-expert { border: 1px solid #f85149; color: #f85149; background: rgba(248, 81, 73, 0.1); }
+.task-title { font-weight: 500; font-size: 14px; margin-bottom: 2px; }
+.task-desc { font-size: 12px; color: #8b949e; font-family: monospace; }
+.task-dash { margin-left: auto; color: #484f58; }
 
-FIXES = [
-    "restart_service", "clear_cache", "scale_replicas", "rotate_credentials", 
-    "rollback_deployment", "increase_connection_pool", "free_disk_space", "update_certificate"
-]
+/* Reward List */
+.reward-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    font-family: monospace;
+    font-size: 13px;
+    border-bottom: 1px dashed #30363d;
+}
+.reward-item:last-child { border-bottom: none; }
+.r-name { font-weight: bold; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size:13px; }
+.r-desc { color: #8b949e; }
 
-TASKS = ["easy_task", "medium_task", "hard_task", "expert_task"]
+/* Graph Components */
+.graph-node {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: monospace;
+    margin: 4px;
+}
+.gn-red { border: 1px solid #f85149; color: #f85149; }
+.gn-orange { border: 1px solid #f0883e; color: #f0883e; }
+.gn-yellow { border: 1px solid #d29922; color: #d29922; }
+.gn-blue { border: 1px solid #58a6ff; color: #58a6ff; }
+.gn-arrow { color: #484f58; margin: 0 4px; font-size: 10px; }
+.graph-row { display: flex; align-items: center; margin-bottom: 8px; }
 
-def api_call(method, endpoint, payload=None):
+/* Grader Bars */
+.grader-item { display: flex; align-items: center; margin-bottom: 15px; font-family: monospace; font-size: 12px; }
+.grader-label { width: 150px; color: #8b949e; }
+.grader-bar-bg { flex-grow: 1; height: 4px; background: #30363d; border-radius: 2px; margin: 0 15px; }
+.grader-bar-fill { height: 100%; border-radius: 2px; }
+.g-red { background: #f85149; width: 35%; }
+.g-orange { background: #f0883e; width: 30%; }
+.g-yellow { background: #d29922; width: 20%; }
+.g-green { background: #3fb950; width: 15%; }
+.grader-val { width: 30px; text-align: right; }
+
+/* API Routes */
+.api-section {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 20px;
+    margin-top: 30px;
+}
+.api-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #2d333b;
+    font-family: monospace;
+    font-size: 13px;
+}
+.api-item:last-child { border-bottom: none; }
+.api-method { padding: 4px 8px; border-radius: 4px; min-width: 40px; text-align: center; margin-right: 15px; font-weight: bold; font-size: 11px; }
+.m-get { background: rgba(63, 185, 80, 0.1); color: #3fb950; }
+.m-post { background: rgba(88, 166, 255, 0.1); color: #58a6ff; }
+.api-path { color: #c9d1d9; font-weight: bold; width: 140px; }
+.api-desc { color: #8b949e; margin-left: auto; }
+
+/* Terminal */
+.terminal-wrapper {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-top: 10px;
+}
+.terminal-header {
+    background-color: #21262d;
+    padding: 8px 15px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #30363d;
+}
+.mac-dots {
+    display: flex;
+    gap: 6px;
+}
+.dot { width: 10px; height: 10px; border-radius: 50%; }
+.dot-red { background-color: #ff5f56; }
+.dot-yellow { background-color: #ffbd2e; }
+.dot-green { background-color: #27c93f; }
+.term-title { margin-left: auto; margin-right: auto; color: #8b949e; font-size: 11px; font-family: monospace; }
+.term-body {
+    background-color: #0d1117;
+    padding: 15px;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 13px;
+    color: #8b949e;
+    min-height: 150px;
+    white-space: pre-wrap;
+}
+
+/* Nav */
+.top-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 0;
+    border-bottom: 1px solid #30363d;
+    margin-bottom: 40px;
+    font-family: monospace;
+    font-size: 12px;
+}
+.nav-logo { display: flex; align-items: center; gap: 10px; }
+.logo-icon { background: #ff5555; color: white; width: 24px; height: 24px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 6px;}
+
+/* Inputs overrides */
+.gradio-dropdown { background: #161b22 !important; border-color: #30363d !important; }
+.run-btn { background: #ff5555 !important; border: none !important; color: white !important; font-family: monospace !important; font-weight: bold !important; border-radius: 6px !important; }
+.clear-btn { background: transparent !important; border: 1px solid #30363d !important; color: #8b949e !important; font-family: monospace !important; border-radius: 6px !important; }
+"""
+
+header_html = """
+<div class="top-nav">
+    <div class="nav-logo">
+        <div class="logo-icon">⬢</div>
+        <div>
+            <div style="color:#c9d1d9; font-weight:bold; font-size:14px; font-family:-apple-system, sans-serif;">devops-incident-response</div>
+            <div style="color:#8b949e;">OpenEnv · RL Testbed</div>
+        </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:15px;">
+        <div class="text-green">● API live</div>
+        <div style="border:1px solid #30363d; padding:2px 8px; border-radius:4px; color:#8b949e;">v1.0.0</div>
+    </div>
+</div>
+
+<div style="margin-bottom: 10px;">
+    <span class="text-red" style="font-family:monospace; font-size:12px; letter-spacing:1px;">META PYTORCH HACKATHON · OPENENV</span>
+</div>
+<h1 style="font-size: 38px; margin-top: 0; margin-bottom: 15px; font-weight:700;">SRE Triage <span class="text-red">RL Environment</span></h1>
+<p style="color:#8b949e; font-size:16px; max-width:700px; line-height:1.6; margin-bottom: 25px;">
+    A deterministic reinforcement learning testbed that stress-tests AI agents on<br>
+    production-style incident response — dependency tracing, root-cause<br>
+    diagnosis, and safe remediation across four difficulty tiers.
+</p>
+
+<div>
+    <span class="badge badge-active">openenv</span>
+    <span class="badge">devops</span>
+    <span class="badge">reinforcement-learning</span>
+    <span class="badge">ai-agents</span>
+    <span class="badge">sre</span>
+</div>
+
+<div class="dashboard-grid">
+    <div class="stat-box">
+        <div class="stat-label">Tasks</div>
+        <div class="stat-value">4</div>
+    </div>
+    <div class="stat-box">
+        <div class="stat-label">Services</div>
+        <div class="stat-value">6</div>
+    </div>
+    <div class="stat-box">
+        <div class="stat-label">Grader</div>
+        <div class="stat-value text-green">DET</div>
+    </div>
+    <div class="stat-box">
+        <div class="stat-label">Port</div>
+        <div class="stat-value">8000</div>
+    </div>
+</div>
+"""
+
+
+features_html = """
+<div class="feature-grid">
+
+    <!-- TASKS -->
+    <div class="feature-card">
+        <div class="feature-header">
+            <span>Tasks</span>
+            <span>4 scenarios</span>
+        </div>
+        
+        <div class="task-item">
+            <div class="task-badge task-easy">easy</div>
+            <div style="border-left: 2px solid #f85149; padding-left: 10px; flex-grow: 1;">
+                <div class="task-title">Single Service Crash</div>
+                <div class="task-desc">api_gateway · max 8 steps</div>
+            </div>
+            <div class="task-dash">—</div>
+        </div>
+        
+        <div class="task-item">
+            <div class="task-badge task-medium">medium</div>
+            <div style="padding-left: 10px; flex-grow: 1;">
+                <div class="task-title">Memory Leak in Order Service</div>
+                <div class="task-desc">order_service · max 10 steps</div>
+            </div>
+            <div class="task-dash">—</div>
+        </div>
+        
+        <div class="task-item">
+            <div class="task-badge task-hard">hard</div>
+            <div style="padding-left: 10px; flex-grow: 1;">
+                <div class="task-title">Cascading DB Disk Saturation</div>
+                <div class="task-desc">database → payment → order · max 12 steps</div>
+            </div>
+            <div class="task-dash">—</div>
+        </div>
+        
+        <div class="task-item">
+            <div class="task-badge task-expert">expert</div>
+            <div style="padding-left: 10px; flex-grow: 1;">
+                <div class="task-title">Compound Multi-Root Failure</div>
+                <div class="task-desc">database + payment_service · max 14 steps</div>
+            </div>
+            <div class="task-dash">—</div>
+        </div>
+    </div>
+    
+    <!-- REWARD SYSTEM -->
+    <div class="feature-card">
+        <div class="feature-header">
+            <span>Reward System</span>
+            <span>dense + final</span>
+        </div>
+        
+        <div class="reward-item">
+            <div><span class="r-name">root investigation</span> <span class="r-desc">inspecting the true failure service</span></div>
+            <div class="text-green">+0.04</div>
+        </div>
+        <div class="reward-item">
+            <div><span class="r-name">affected service</span> <span class="r-desc">tracing symptom dependencies</span></div>
+            <div class="text-green">+0.03</div>
+        </div>
+        <div class="reward-item">
+            <div><span class="r-name">correct diagnosis</span> <span class="r-desc">identifying the exact failure mode</span></div>
+            <div class="text-green">+0.08</div>
+        </div>
+        <div class="reward-item">
+            <div><span class="r-name">correct fix</span> <span class="r-desc">right remediation, right service</span></div>
+            <div class="text-green">+0.12</div>
+        </div>
+        <div class="reward-item">
+            <div><span class="r-name">verification</span> <span class="r-desc">confirmed recovery</span></div>
+            <div class="text-green">+0.04</div>
+        </div>
+        <div class="reward-item" style="margin-top:10px;">
+            <div><span class="r-name">invalid action</span> <span class="r-desc">wrong, redundant, or destructive</span></div>
+            <div class="text-red">-0.03</div>
+        </div>
+    </div>
+    
+    <!-- SERVICE DEPENDENCY GRAPH -->
+    <div class="feature-card">
+        <div class="feature-header">
+            <span>Service Dependency Graph</span>
+            <span></span>
+        </div>
+        
+        <div class="graph-row">
+            <div class="graph-node gn-red">api_gateway</div>
+            <div class="gn-arrow">→</div>
+            <div class="graph-node gn-orange">auth_service</div>
+            <div class="gn-arrow">+</div>
+            <div class="graph-node gn-orange">order_service</div>
+        </div>
+        
+        <div class="graph-row" style="padding-left: 25px;">
+            <div class="graph-node gn-yellow">order_service</div>
+            <div class="gn-arrow">→</div>
+            <div class="graph-node gn-yellow">payment_service</div>
+            <div class="gn-arrow">+</div>
+            <div class="graph-node gn-blue">database</div>
+        </div>
+        
+        <div class="graph-row" style="padding-left: 25px;">
+            <div class="graph-node gn-yellow">auth_service</div>
+            <div class="gn-arrow">→</div>
+            <div class="graph-node gn-yellow">user_service</div>
+            <div class="gn-arrow">→</div>
+            <div class="graph-node gn-blue">database</div>
+        </div>
+        
+        <div class="graph-row" style="padding-left: 25px;">
+            <div class="graph-node gn-yellow">payment_service</div>
+            <div class="gn-arrow">→</div>
+            <div class="graph-node gn-blue">database</div>
+        </div>
+        
+        <div style="font-family:monospace; font-size:11px; color:#8b949e; margin-top:30px;">
+            Agents must trace root causes downstream, not patch surface symptoms.
+        </div>
+    </div>
+    
+    <!-- GRADER WEIGHTS -->
+    <div class="feature-card">
+        <div class="feature-header">
+            <span>Grader Weights</span>
+            <span>score: —</span>
+        </div>
+        
+        <div class="grader-item" style="margin-top:20px;">
+            <div class="grader-label">root identification</div>
+            <div class="grader-bar-bg"><div class="grader-bar-fill g-red"></div></div>
+            <div class="grader-val">35%</div>
+        </div>
+        
+        <div class="grader-item">
+            <div class="grader-label">resolution</div>
+            <div class="grader-bar-bg"><div class="grader-bar-fill g-orange"></div></div>
+            <div class="grader-val">30%</div>
+        </div>
+        
+        <div class="grader-item">
+            <div class="grader-label">efficiency</div>
+            <div class="grader-bar-bg"><div class="grader-bar-fill g-yellow"></div></div>
+            <div class="grader-val">20%</div>
+        </div>
+        
+        <div class="grader-item">
+            <div class="grader-label">safety</div>
+            <div class="grader-bar-bg"><div class="grader-bar-fill g-green"></div></div>
+            <div class="grader-val">15%</div>
+        </div>
+        
+        <div style="font-family:monospace; font-size:11px; color:#8b949e; margin-top:35px;">
+            Final score clamped strictly within (0.001, 0.999)
+        </div>
+    </div>
+    
+</div>
+"""
+
+apis_html = """
+<div class="api-section">
+    <div class="feature-header">
+        <span>API Routes</span>
+        <span>port 8000</span>
+    </div>
+    
+    <div class="api-item">
+        <div class="api-method m-get">GET</div>
+        <div class="api-path">/</div>
+        <div class="api-desc">environment manifest</div>
+    </div>
+    
+    <div class="api-item">
+        <div class="api-method m-get">GET</div>
+        <div class="api-path">/health</div>
+        <div class="api-desc">liveness check</div>
+    </div>
+    
+    <div class="api-item">
+        <div class="api-method m-get">GET</div>
+        <div class="api-path">/tasks</div>
+        <div class="api-desc">list all task definitions</div>
+    </div>
+    
+    <div class="api-item">
+        <div class="api-method m-post">POST</div>
+        <div class="api-path">/reset</div>
+        <div class="api-desc">start episode {task_id, seed}</div>
+    </div>
+    
+    <div class="api-item">
+        <div class="api-method m-post">POST</div>
+        <div class="api-path">/step</div>
+        <div class="api-desc">execute action → observation + reward</div>
+    </div>
+    
+    <div class="api-item">
+        <div class="api-method m-get">GET</div>
+        <div class="api-path">/state</div>
+        <div class="api-desc">full environment state</div>
+    </div>
+    
+    <div class="api-item">
+        <div class="api-method m-get">GET</div>
+        <div class="api-path">/grader</div>
+        <div class="api-desc">deterministic episode score</div>
+    </div>
+    
+    <div class="api-item">
+        <div class="api-method m-get">GET</div>
+        <div class="api-path">/baseline</div>
+        <div class="api-desc">rule-based baseline action</div>
+    </div>
+    
+    <div class="api-item">
+        <div class="api-method m-get">GET</div>
+        <div class="api-path">/sample_action</div>
+        <div class="api-desc">example valid action payload</div>
+    </div>
+</div>
+
+<div style="display:flex; justify-content:space-between; margin-top:40px; margin-bottom:20px; font-family:monospace; font-size:12px; color:#484f58;">
+    <div>devops-incident-response · OpenEnv · aryanosh</div>
+    <div style="display:flex; gap:15px;">
+        <span>GitHub</span>
+        <span>Tasks JSON</span>
+        <span>Manifest</span>
+    </div>
+</div>
+"""
+
+init_cmd = "$ python inference.py # select a task and click Run\n"
+
+def run_simulation(task):
+    if not task:
+        task = "easy_task"
+    
+    task_id = task.split(" - ")[0].strip() + "_task"
+    
+    yield init_cmd + f"\n> Starting simulation for {task_id}...\n"
+    time.sleep(0.5)
+    
     try:
-        url = f"{API_URL}{endpoint}"
-        if method == "GET":
-            r = requests.get(url, timeout=10)
-        elif method == "POST":
-            r = requests.post(url, json=payload, timeout=20)
-        else:
-            return None, "Unsupported method"
+        import subprocess
+        # Run eval_baseline.py to simulate the agent
+        # We can intercept stdout, but it's easier to just run python eval_baseline.py
+        # Or even better, run eval_baseline and show it live
+        process = subprocess.Popen(["uv", "run", "python", "eval_baseline.py"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         
-        r.raise_for_status()
-        return r.json(), None
+        output = init_cmd + f"\n> Starting simulation for {task_id}...\n"
+        for line in iter(process.stdout.readline, ''):
+            output += line
+            yield output
+            time.sleep(0.2)
+            
+        process.stdout.close()
+        process.wait()
+        
+        output += "\n[Simulation Complete]\n"
+        yield output
     except Exception as e:
-        return None, f"API Error: {str(e)}"
+        yield init_cmd + f"\n> Error: {str(e)}\n"
 
-def format_alerts(alerts):
-    if not alerts:
-        return "✅ No active alerts"
-    md = ""
-    for a in alerts:
-        sev = a.get("severity", "medium")
-        emoji = SEVERITY_EMOJIS.get(sev, "⚠️")
-        md += f"**{emoji} [{sev.upper()}] {a.get('service', 'System')}** - {a.get('title', '')}\n"
-        md += f"_{a.get('description', '')}_\n\n"
-    return md
+def clear_terminal():
+    return init_cmd
 
-def format_services(services):
-    if not services:
-        return "No service data available. Use 'List Services' action to discover services."
-    md = "| Service | Status | Dependencies |\n|---|---|---|\n"
-    for s in services:
-        status = s.get("status", "unknown")
-        emoji = STATUS_EMOJIS.get(status, "❓")
-        deps = ", ".join(s.get("depends_on", [])) or "None"
-        md += f"| {s.get('service_name')} | {emoji} {status} | {deps} |\n"
-    return md
-
-def format_logs(logs):
-    if not logs:
-        return "No logs available."
-    res = ""
-    for l in logs:
-        res += f"[{l.get('timestamp')}] {l.get('level')} [{l.get('service')}] - {l.get('message')}\n"
-    return res
-
-def format_metrics(metrics):
-    if not metrics:
-        return "No metrics available."
-    md = f"### Metrics for {metrics.get('service_name')}\n"
-    md += f"- **CPU**: {metrics.get('cpu_percent')}% \n"
-    md += f"- **Memory**: {metrics.get('memory_mb')}!MB / {metrics.get('memory_limit_mb')}!MB \n"
-    md += f"- **Latency (p50/p99)**: {metrics.get('request_latency_p50_ms')}!ms / {metrics.get('request_latency_p99_ms')}!ms \n"
-    md += f"- **Error Rate**: {metrics.get('error_rate_percent')}% \n"
-    md += f"- **Status**: {STATUS_EMOJIS.get(metrics.get('status'), '')} {metrics.get('status')} \n"
-    return md
-
-def update_ui_from_obs(obs, reward, info, done):
-    if not obs:
-        return (
-            "Error: No observation data.", "Error.", "", "Error", "Error", "Error", "Error"
+# Gradio Setup
+with gr.Blocks(css=custom_css, title="SRE Triage RL Environment", theme=gr.themes.Base()) as app:
+    
+    # 1. Header & Stats
+    gr.HTML(header_html)
+    
+    # 2. Controls
+    with gr.Row(elem_id="controls-row"):
+        task_dropdown = gr.Dropdown(
+            choices=[
+                "easy - single service crash",
+                "medium - memory leak",
+                "hard - cascading saturation",
+                "expert - multi-root failure"
+            ],
+            value="easy - single service crash",
+            show_label=False,
+            container=False,
+            scale=2,
+            elem_classes=["gradio-dropdown"]
         )
+        run_btn = gr.Button("Run simulation", elem_classes=["run-btn"], scale=1)
+        clear_btn = gr.Button("Clear", elem_classes=["clear-btn"], scale=1)
     
-    alerts_md = format_alerts(obs.get("active_alerts", []))
-    services_md = format_services(obs.get("service_summaries", []))
-    logs_text = format_logs(obs.get("logs", []))
-    metrics_md = format_metrics(obs.get("metrics"))
+    # 3. Terminal Emulator
+    gr.HTML('<div class="terminal-wrapper"><div class="terminal-header"><div class="mac-dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div><div class="term-title">inference.py — devops_incident_env</div></div>')
     
-    step = obs.get("step_number", 0)
-    max_steps = obs.get("max_steps", 10)
+    terminal_output = gr.HTML(f'<div class="term-body">{init_cmd}</div>')
     
-    prog_str = f"Step: {step} / {max_steps}"
+    gr.HTML('</div>') # end wrapper
     
-    score_str = f"Cum Reward: {reward:.3f} | Done: {done}"
-    if done and info and "final_score" in info:
-        score_str += f"\nFinal Score: {info['final_score']:.3f}"
-        
-    action_msg = obs.get("message", "")
-    success = obs.get("success", False)
-    msg_prefix = "✅" if success else "❌"
+    def stream_format(task):
+        for out in run_simulation(task):
+            yield f'<div class="term-body">{out}</div>'
     
-    history_line = f"[{step}] {msg_prefix} {action_msg}"
+    run_btn.click(fn=stream_format, inputs=[task_dropdown], outputs=[terminal_output])
+    clear_btn.click(fn=lambda: f'<div class="term-body">{clear_terminal()}</div>', outputs=[terminal_output])
     
-    return alerts_md, services_md, logs_text, metrics_md, prog_str, score_str, history_line
+    # 4. Features grid
+    gr.HTML(features_html)
+    
+    # 5. APIs and footer
+    gr.HTML(apis_html)
 
-def reset_incident(task_id):
-    # Wait for API to be ready if it's spinning up
-    for _ in range(5):
-        if api_call("GET", "/health")[1] is None:
-            break
-        time.sleep(1)
-        
-    data, err = api_call("POST", "/reset", {"task_id": task_id, "seed": 42})
-    if err:
-        return f"🚨 Error: {err}", "Error", "", "Error", "0/0", "0.0", err, []
-        
-    obs = data.get("observation", {})
-    r = data.get("reward", 0.0)
-    info = data.get("info", {})
-    done = data.get("done", False)
-    
-    alerts_md, services_md, logs_text, metrics_md, prog_str, score_str, history_line = update_ui_from_obs(obs, r, info, done)
-    
-    return alerts_md, services_md, logs_text, metrics_md, prog_str, score_str, history_line, [history_line]
-
-def perform_action(action_type, service=None, diagnosis=None, fix=None, history=[]):
-    payload = {
-        "action": {
-            "action_type": action_type,
-            "service": service if service else None,
-            "diagnosis": diagnosis if diagnosis else None,
-            "fix": fix if fix else None
-        }
-    }
-    data, err = api_call("POST", "/step", payload)
-    if err:
-        error_line = f"🚨 Action Failed: {err}"
-        return "Error", "Error", "", "Error", "Error", "Error", error_line, history + [error_line]
-        
-    obs = data.get("observation", {})
-    r = data.get("reward", 0.0)
-    info = data.get("info", {})
-    done = data.get("done", False)
-    
-    alerts_md, services_md, logs_text, metrics_md, prog_str, score_str, history_line = update_ui_from_obs(obs, r, info, done)
-    
-    new_history = history + [history_line]
-    history_md = "\n".join(new_history[::-1]) # Reverse to show newest first
-    
-    if done:
-        state_data, _ = api_call("GET", "/grader")
-        if state_data:
-            score_str += f"\n\n**Grader Breakdown:**\n```json\n{json.dumps(state_data, indent=2)}\n```"
-            
-    return alerts_md, services_md, logs_text, metrics_md, prog_str, score_str, history_md, new_history
-
-# Gradio UI definition
-with gr.Blocks(theme=gr.themes.Monochrome(), title="DevOps Incident Response Env") as app:
-    gr.Markdown("# 🚀 DevOps Incident Response OpenEnv")
-    gr.Markdown("Resolve the active incident by diagnosing and fixing the degraded services within the step limit.")
-    
-    history_state = gr.State([])
-    
-    with gr.Row():
-        with gr.Column(scale=1):
-            task_dropdown = gr.Dropdown(choices=TASKS, value="easy_task", label="Select Task Severity")
-            start_btn = gr.Button("🔥 Start Incident", variant="primary")
-        with gr.Column(scale=1):
-            progress_md = gr.Markdown("### Step: 0 / 0", label="Progress")
-            score_md = gr.Markdown("### Cum Reward: 0.0", label="Score")
-            
-    with gr.Row():
-        with gr.Column(scale=1):
-            alerts_panel = gr.Markdown("No active alerts", label="Active Alerts")
-        with gr.Column(scale=2):
-            services_panel = gr.Markdown("No services listed", label="Service Status")
-            
-    with gr.Row():
-        with gr.Column(scale=1, variant="panel"):
-            gr.Markdown("### 🛠️ Actions")
-            action_service = gr.Dropdown(choices=SERVICES, label="Target Service")
-            
-            with gr.Row():
-                btn_list = gr.Button("List Services")
-                btn_deps = gr.Button("Inspect Dependencies")
-            
-            with gr.Row():
-                btn_logs = gr.Button("Read Logs")
-                btn_metrics = gr.Button("Query Metrics")
-                
-            action_diagnosis = gr.Dropdown(choices=DIAGNOSES, label="Diagnosis")
-            btn_diagnose = gr.Button("Diagnose")
-            
-            action_fix = gr.Dropdown(choices=FIXES, label="Remediation")
-            btn_fix = gr.Button("Apply Fix")
-            
-            btn_verify = gr.Button("Verify Health", variant="secondary")
-            
-        with gr.Column(scale=2):
-            gr.Markdown("### 📊 Logs & Metrics")
-            with gr.Tabs():
-                with gr.Tab("Logs"):
-                    logs_panel = gr.Textbox(lines=10, max_lines=15, label="Service Logs", interactive=False)
-                with gr.Tab("Metrics"):
-                    metrics_panel = gr.Markdown("No metrics queried yet.")
-                with gr.Tab("History"):
-                    history_panel = gr.Markdown("No actions taken.")
-                    
-    # Wiring events
-    start_btn.click(
-        fn=reset_incident,
-        inputs=[task_dropdown],
-        outputs=[alerts_panel, services_panel, logs_panel, metrics_panel, progress_md, score_md, history_panel, history_state]
-    )
-    
-    def mk_action_fn(action_name):
-        return lambda s, d, f, h: perform_action(action_name, s, d, f, h)
-        
-    btn_list.click(fn=mk_action_fn("list_services"), inputs=[action_service, action_diagnosis, action_fix, history_state], outputs=[alerts_panel, services_panel, logs_panel, metrics_panel, progress_md, score_md, history_panel, history_state])
-    btn_deps.click(fn=mk_action_fn("inspect_dependencies"), inputs=[action_service, action_diagnosis, action_fix, history_state], outputs=[alerts_panel, services_panel, logs_panel, metrics_panel, progress_md, score_md, history_panel, history_state])
-    btn_logs.click(fn=mk_action_fn("read_logs"), inputs=[action_service, action_diagnosis, action_fix, history_state], outputs=[alerts_panel, services_panel, logs_panel, metrics_panel, progress_md, score_md, history_panel, history_state])
-    btn_metrics.click(fn=mk_action_fn("query_metrics"), inputs=[action_service, action_diagnosis, action_fix, history_state], outputs=[alerts_panel, services_panel, logs_panel, metrics_panel, progress_md, score_md, history_panel, history_state])
-    btn_diagnose.click(fn=mk_action_fn("diagnose"), inputs=[action_service, action_diagnosis, action_fix, history_state], outputs=[alerts_panel, services_panel, logs_panel, metrics_panel, progress_md, score_md, history_panel, history_state])
-    btn_fix.click(fn=mk_action_fn("apply_fix"), inputs=[action_service, action_diagnosis, action_fix, history_state], outputs=[alerts_panel, services_panel, logs_panel, metrics_panel, progress_md, score_md, history_panel, history_state])
-    btn_verify.click(fn=mk_action_fn("verify_health"), inputs=[action_service, action_diagnosis, action_fix, history_state], outputs=[alerts_panel, services_panel, logs_panel, metrics_panel, progress_md, score_md, history_panel, history_state])
-    
 if __name__ == "__main__":
-    app.launch(server_name="0.0.0.0", server_port=7860)
+    pass
+    # app.launch(...) -> is handled by fastapi mount
