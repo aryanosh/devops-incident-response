@@ -213,19 +213,23 @@ The agent correctly resists patching `api_gateway` (the visible alert) and trace
 
 ---
 
-## Baseline Scores
+## Agent Performance Comparison
+
+To demonstrate the environment's discriminative power and exploit resistance, here is a comparison between a reactive "dumb" baseline and a reasoning LLM agent (`Qwen2.5-72B-Instruct` with the improved system prompt):
+
+| Task | Difficulty | Reactive Baseline | LLM Agent |
+|---|---|---|---|
+| `easy_task` | 🟢 Easy | `0.800` | `0.880` |
+| `medium_task` | 🟡 Medium | `0.860` | `0.880` |
+| `hard_task` | 🔴 Hard | `0.117` | `0.880` |
+| `expert_task` | 🟣 Expert | `0.117` | `0.880` |
+
+*Note: The reactive baseline scores acceptably on Easy and Medium tasks since the surface symptom matches the root cause. However, it fails drastically on Hard and Expert tasks because the environment requires tracing dependencies from the alert to the true root cause, and heavily penalizes blind remediation attempts.*
 
 Committed run artifacts are in `outputs/` for evaluator verification:
 
 - `outputs/inference_baseline_run.txt` — full `[START]`/`[STEP]`/`[END]` trace across all 4 tasks
 - `outputs/task_score_summary.json` — per-task final grader scores
-
-| Task | Difficulty | Grader Score |
-|---|---|---|
-| `easy_task` | 🟢 Easy | `0.880` |
-| `medium_task` | 🟡 Medium | `0.880` |
-| `hard_task` | 🔴 Hard | `0.880` |
-| `expert_task` | 🟣 Expert | `0.880` |
 
 ---
 

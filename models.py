@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
-from openenv.core.env_server.types import Action, Observation, State
+
 
 try:
     from .constants import (
@@ -60,7 +60,7 @@ class Alert(BaseModel):
     runbook_hint: Optional[str] = None
 
 
-class IncidentAction(Action):
+class IncidentAction(BaseModel):
     action_type: Literal[
         "read_logs",
         "query_metrics",
@@ -76,7 +76,7 @@ class IncidentAction(Action):
     reasoning: Optional[str] = Field(None, max_length=MAX_REASONING_LENGTH)
 
 
-class IncidentObservation(Observation):
+class IncidentObservation(BaseModel):
     action_result: str
     success: bool
     message: str
@@ -90,9 +90,12 @@ class IncidentObservation(Observation):
     steps_remaining: int
     available_services: List[str] = Field(default_factory=list)
     available_actions: List[str] = Field(default_factory=list)
+    reward: Optional[float] = None
+    done: bool = False
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-class EnvironmentState(State):
+class EnvironmentState(BaseModel):
     episode_id: str
     step_count: int = 0
     task_id: str

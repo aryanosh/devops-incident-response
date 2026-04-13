@@ -5,8 +5,6 @@ import hashlib
 import random
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
-from openenv.core.env_server.interfaces import Environment
-
 try:
     from ..constants import SCORE_CEILING, SCORE_FLOOR, TRAJECTORY_REWARD_MAX, TRAJECTORY_REWARD_MIN
     from ..grader import _strict_score, grade_episode
@@ -53,11 +51,8 @@ except ImportError:
     )
 
 
-class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, EnvironmentState]):
-    SUPPORTS_CONCURRENT_SESSIONS: bool = True
-
+class IncidentEnvironment:
     def __init__(self) -> None:
-        super().__init__()
         self._scenario_config: Dict[str, Any] = dict(SCENARIO_CONFIGS["easy_task"])
         self._seed: int = 0
         self._rng = random.Random(0)
@@ -328,7 +323,7 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Envir
             metrics=metrics,
             service_summaries=self._generate_service_summaries(),
             active_alerts=self._generate_alerts(),
-            dependency_graph=SERVICE_DEPENDENCY_GRAPH,
+            dependency_graph={s: SERVICE_DEPENDENCY_GRAPH[s] for s in self._state.dependencies_inspected if s in SERVICE_DEPENDENCY_GRAPH} if "full" not in self._state.dependencies_inspected else SERVICE_DEPENDENCY_GRAPH,
             step_number=step_number,
             max_steps=self._state.max_steps,
             steps_remaining=max(self._state.max_steps - step_number, 0),
@@ -369,6 +364,8 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Envir
             )
 
         reward = 0.01
+        if "full" not in self._state.dependencies_inspected:
+            self._state.dependencies_inspected.append("full")
         return ("Full dependency graph inspected.", str(SERVICE_DEPENDENCY_GRAPH), reward)
 
     def _handle_read_logs(self, service: Optional[str]) -> Tuple[str, str, float, List[ServiceLog], bool]:
@@ -473,10 +470,11 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Envir
                 True,
             )
 
+        self._state.destructive_actions += 1
         self._state.last_action_error = "incorrect_diagnosis"
         return (
             f"Diagnosis for {service} appears incorrect.",
-            f"Observed evidence better matches {expected_mode}.",
+            "Observed evidence does not support this diagnosis. Re-evaluate logs and metrics.",
             0.0,
             False,
         )
@@ -512,7 +510,7 @@ class IncidentEnvironment(Environment[IncidentAction, IncidentObservation, Envir
             elif is_already_fixed:
                 reason = f"Service {service} has already been fixed."
             else:
-                reason = f"The expected remediation for {mode} is {expected_fix or 'different'}."
+                reason = "This remediation did not resolve the current failure mode."
             
             record = {"service": service, "fix": fix, "success": False, "destructive": True}
             self._state.fixes_applied.append(record)

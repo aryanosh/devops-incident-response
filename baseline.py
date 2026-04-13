@@ -73,22 +73,11 @@ def choose_action(observation: Dict[str, Any], state_dict: Dict[str, Any]) -> In
     diagnoses = state_dict.get("diagnoses", [])
     fixes_applied = state_dict.get("fixes_applied", [])
     successful_verifications = set(state_dict.get("successful_verifications", []))
-    root_cause_services = list(state_dict.get("root_cause_services", []))
     dependencies_inspected = set(state_dict.get("dependencies_inspected", []))
-
-    target_service = next(
-        (service for service in root_cause_services if service not in successful_verifications),
-        _priority_service(observation) or "api_gateway",
-    )
-    alerted_service = _priority_service(observation) or target_service
+    target_service = _priority_service(observation) or "api_gateway"
+    alerted_service = target_service
 
     inferred_diagnosis, inferred_fix = _expected_from_text(text)
-    root_modes = list(state_dict.get("root_cause_failure_modes", []))
-    mode_by_root = {
-        root_cause_services[idx]: root_modes[idx]
-        for idx in range(min(len(root_cause_services), len(root_modes)))
-    }
-    expected_fix_map = dict(state_dict.get("required_fixes", {}))
 
     # Follow a stable incident-response order before remediation.
     if not action_history:
@@ -107,7 +96,7 @@ def choose_action(observation: Dict[str, Any], state_dict: Dict[str, Any]) -> In
             ),
         )
 
-    if alerted_service not in dependencies_inspected and alerted_service not in root_cause_services:
+    if alerted_service not in dependencies_inspected:
         return IncidentAction(
             action_type="inspect_dependencies",
             service=alerted_service,
@@ -117,21 +106,20 @@ def choose_action(observation: Dict[str, Any], state_dict: Dict[str, Any]) -> In
             ),
         )
 
-    unresolved_roots = [service for service in root_cause_services if service not in successful_verifications]
-    if len(unresolved_roots) > 1 and target_service not in dependencies_inspected:
+    if len(action_history) > 2 and target_service not in dependencies_inspected:
         return IncidentAction(
             action_type="inspect_dependencies",
             service=target_service,
             reasoning=(
-                f"Map dependencies before remediation for multi-root incident at {target_service}. "
+                f"Map dependencies before remediation for incident at {target_service}. "
                 "confidence=0.76"
             ),
         )
 
     if inferred_diagnosis is None:
-        inferred_diagnosis = mode_by_root.get(target_service)
+        inferred_diagnosis = "service_crash"  # Fallback guess
     if inferred_fix is None:
-        inferred_fix = expected_fix_map.get(target_service)
+        inferred_fix = "restart_service"  # Fallback guess
 
     if target_service not in services_investigated:
         return IncidentAction(

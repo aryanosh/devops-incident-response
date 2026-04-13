@@ -243,13 +243,6 @@ SCENARIO_CONFIGS: Dict[str, Dict[str, object]] = {
                 ),
                 "runbook_hint": "Inspect the dependency chain and database health.",
             },
-            {
-                "severity": "high",
-                "service": "database",
-                "title": "Storage Pressure Critical",
-                "description": "Primary database volume utilization is above 99%.",
-                "runbook_hint": "Investigate storage-related write failures.",
-            },
         ],
     },
     "expert_task": {
@@ -291,13 +284,6 @@ SCENARIO_CONFIGS: Dict[str, Dict[str, object]] = {
                     "Workers are blocked waiting on connections while the database is under storage pressure."
                 ),
                 "runbook_hint": "Resolve the storage and pool bottlenecks in the correct order.",
-            },
-            {
-                "severity": "high",
-                "service": "database",
-                "title": "Database Storage Pressure Critical",
-                "description": "Primary database volume utilization is above 99% and interfering with writes.",
-                "runbook_hint": "Free storage before retry storms worsen the incident.",
             },
         ],
     },

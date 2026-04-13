@@ -3,9 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 import uvicorn
-from openenv.core.env_server.http_server import create_app
-from fastapi import Body
-from fastapi.routing import APIRoute
+from fastapi import FastAPI, Body
 
 try:
     from ..baseline import choose_action
@@ -20,20 +18,7 @@ except ImportError:
 
 _ENV = IncidentEnvironment()
 
-
-def _env_factory() -> IncidentEnvironment:
-    # Reuse a singleton environment instance for HTTP endpoint continuity.
-    return _ENV
-
-
-app = create_app(
-    _env_factory,
-    IncidentAction,
-    IncidentObservation,
-    env_name="devops_incident_env",
-    max_concurrent_envs=10,
-)
-
+app = FastAPI(title="devops_incident_env")
 
 def _strict_unit(value: Any, floor: float = SCORE_FLOOR, ceiling: float = SCORE_CEILING) -> float:
     try:
@@ -43,25 +28,6 @@ def _strict_unit(value: Any, floor: float = SCORE_FLOOR, ceiling: float = SCORE_
     if score != score:  # NaN guard
         return floor
     return max(floor, min(ceiling, score))
-
-
-def _remove_route(path: str, method: str) -> None:
-    method = method.upper()
-    app.router.routes = [
-        route
-        for route in app.router.routes
-        if not (
-            isinstance(route, APIRoute)
-            and route.path == path
-            and method in route.methods
-        )
-    ]
-
-
-# Override default OpenEnv wrappers to keep backward-compatible payloads.
-_remove_route("/reset", "POST")
-_remove_route("/step", "POST")
-_remove_route("/state", "GET")
 
 
 def _wrap_observation(observation: IncidentObservation) -> Dict[str, Any]:
@@ -84,6 +50,10 @@ def _wrap_observation(observation: IncidentObservation) -> Dict[str, Any]:
 @app.get("/")
 def root() -> Dict[str, Any]:
     return _ENV.manifest()
+
+@app.get("/health")
+def health() -> Dict[str, str]:
+    return {"status": "healthy"}
 
 
 @app.get("/tasks")
