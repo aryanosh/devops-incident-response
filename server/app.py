@@ -3,7 +3,10 @@ from __future__ import annotations
 from typing import Any, Dict
 
 import uvicorn
-from fastapi import FastAPI, Body
+from fastapi import FastAPI, Body, Request
+from fastapi.responses import RedirectResponse
+import gradio as gr
+from gradio_app import app as gradio_ui
 
 try:
     from ..baseline import choose_action
@@ -48,7 +51,10 @@ def _wrap_observation(observation: IncidentObservation) -> Dict[str, Any]:
 
 
 @app.get("/")
-def root() -> Dict[str, Any]:
+def root(request: Request) -> Any:
+    # Redirect browsers to UI, leaving API requests untouched
+    if "text/html" in request.headers.get("accept", ""):
+        return RedirectResponse(url="/ui/")
     return _ENV.manifest()
 
 @app.get("/health")
@@ -119,6 +125,9 @@ def baseline() -> Dict[str, Any]:
 @app.get("/sample_action")
 def sample_action() -> Dict[str, Any]:
     return baseline()
+
+
+app = gr.mount_gradio_app(app, gradio_ui, path="/ui")
 
 
 def main() -> int:
