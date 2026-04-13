@@ -704,7 +704,7 @@ def update_task_info(task_key: str) -> tuple:
 
 # ── Build Gradio app ──────────────────────────────────────────────────────────
 
-with gr.Blocks(css=CSS, title="DevOps Incident Response — OpenEnv") as demo:
+with gr.Blocks(css=CSS, title="DevOps Incident Response — OpenEnv") as app:
 
     gr.HTML(HEADER_HTML)
     gr.HTML(STATS_HTML)
@@ -847,4 +847,4 @@ with gr.Blocks(css=CSS, title="DevOps Incident Response — OpenEnv") as demo:
 
 
 if __name__ == "__main__":
-    demo.launch()
+    app.launch()
