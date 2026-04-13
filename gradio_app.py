@@ -119,7 +119,12 @@ CSS = """
 body, .gradio-container {
     background: #0a0c0f !important;
     color: #e8eaed !important;
-    font-family: 'DM Sans', 'Segoe UI', sans-serif !important;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+}
+
+h1, h2, h3, h4, h5, h6, .section-title {
+    font-family: 'Outfit', system-ui, sans-serif !important;
+    letter-spacing: -0.02em;
 }
 
 /* Remove Gradio's default white card wrappers */
@@ -132,21 +137,25 @@ body, .gradio-container {
 
 /* Header bar */
 #header-bar {
-    background: #111418;
-    border-bottom: 1px solid rgba(255,255,255,0.07);
+    background: rgba(10, 12, 15, 0.7);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     padding: 14px 24px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 0;
+    position: sticky;
+    top: 0;
+    z-index: 50;
 }
 
 /* Hero section */
 #hero-section {
-    background: #0a0c0f;
-    border-bottom: 1px solid rgba(255,255,255,0.07);
-    padding: 40px 24px 32px;
-    margin-bottom: 24px;
+    background: radial-gradient(circle at 10% 0%, rgba(239, 68, 68, 0.05) 0%, transparent 40%), #0a0c0f;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 60px 24px 40px;
+    margin-bottom: 32px;
 }
 
 /* Stat cards */
@@ -154,10 +163,17 @@ body, .gradio-container {
 
 .stat-card {
     flex: 1;
-    background: #111418;
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 8px;
-    padding: 14px 18px;
+    background: rgba(17, 20, 24, 0.6);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+.stat-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.15);
 }
 
 .stat-label {
@@ -264,16 +280,24 @@ select, .gr-dropdown select {
 
 /* Card sections */
 .section-card {
-    background: #111418;
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 10px;
+    background: rgba(17, 20, 24, 0.6);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
     overflow: hidden;
-    margin-bottom: 16px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.section-card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
 }
 
 .section-header {
-    padding: 12px 16px;
-    border-bottom: 1px solid rgba(255,255,255,0.07);
+    padding: 14px 20px;
+    background: rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -432,7 +456,7 @@ label span { color: #6b7280 !important; font-size: 11px !important; font-family:
 
 HEADER_HTML = """
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
 <div id="header-bar">
   <div style="display:flex;align-items:center;gap:10px;">
     <div style="width:28px;height:28px;background:#ef4444;border-radius:6px;display:flex;align-items:center;justify-content:center;">
@@ -455,9 +479,7 @@ HEADER_HTML = """
   </div>
 </div>
 <div id="hero-section">
-  <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#ef4444;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px;">
-    Meta PyTorch Hackathon · OpenEnv
-  </div>
+  <!-- Removed Hackathon text per request -->
   <h1 style="font-size:32px;font-weight:600;line-height:1.2;margin-bottom:12px;color:#e8eaed;">
     SRE Triage <span style="color:#ef4444;">RL Environment</span>
   </h1>
