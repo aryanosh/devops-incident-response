@@ -163,17 +163,17 @@ h1, h2, h3, h4, h5, h6, .section-title {
 
 .stat-card {
     flex: 1;
-    background: rgba(17, 20, 24, 0.6);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    padding: 16px 20px;
-    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
-    transition: transform 0.2s ease, border-color 0.2s ease;
+    background: rgba(17, 20, 24, 0.4) !important;
+    backdrop-filter: blur(16px) !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 12px !important;
+    padding: 18px 22px !important;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05) !important;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease !important;
 }
 .stat-card:hover {
-    transform: translateY(-2px);
-    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateY(-3px) scale(1.01) !important;
+    border-color: rgba(255,255,255,0.2) !important;
 }
 
 .stat-label {
@@ -280,18 +280,18 @@ select, .gr-dropdown select {
 
 /* Card sections */
 .section-card {
-    background: rgba(17, 20, 24, 0.6);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
+    background: rgba(17, 20, 24, 0.4) !important;
+    backdrop-filter: blur(16px) !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 12px !important;
     overflow: hidden;
     margin-bottom: 20px;
-    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
-    transition: transform 0.2s ease, border-color 0.2s ease;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.03) !important;
+    transition: transform 0.3s ease, border-color 0.3s ease !important;
 }
 
 .section-card:hover {
-    border-color: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255,255,255,0.15) !important;
 }
 
 .section-header {
