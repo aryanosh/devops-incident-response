@@ -175,7 +175,7 @@ All routes conform to the OpenEnv HTTP specification. Both the JSON API and the 
 
 ## Reward System
 
-The environment emits dense per-step rewards and a separate deterministic final grader score. **All rewards and scores are strictly bounded within `(0.001, 0.999)`** — never exactly `0` or `1`.
+The environment emits dense per-step rewards and a separate deterministic final grader score. **All rewards and scores are strictly between `(0, 1)`** — never exactly `0` or `1`.
 
 ### Step Rewards
 
@@ -193,7 +193,7 @@ The environment emits dense per-step rewards and a separate deterministic final 
 
 ### Final Grader Score
 
-The grader combines four weighted dimensions into a final score clamped to `(0.001, 0.999)`:
+The grader combines four weighted dimensions into a final score strictly between `(0, 1)`:
 
 | Component | Weight | What It Measures |
 |---|---|---|
@@ -313,7 +313,7 @@ devops_incident_env/
 
 **Dependency-aware reward shaping.** Investigating the right service in the dependency chain earns more than investigating the surface symptom. This teaches causal debugging, not symptom patching.
 
-**Strict score bounds.** Every reward from `/step` and every score from `/grader` is bounded to `(0.001, 0.999)`. No `0.0` or `1.0` is ever returned.
+**Strict score bounds.** Every reward from `/step` and every score from `/grader` is strictly between `(0, 1)`. No `0.0` or `1.0` is ever returned.
 
 **Anti-abuse mechanics.** Applying a wrong fix, fixing an already-healthy service, or repeating fixes counts as a destructive action. Each reduces the Safety component by 50%.
 
