@@ -623,7 +623,7 @@ def make_score_bars_html(task_key: str) -> str:
       </div>
       <div style="padding:16px;">{rows}
         <div style="margin-top:10px;font-size:10px;color:#6b7280;font-family:'IBM Plex Mono',monospace;border-top:1px solid rgba(255,255,255,0.05);padding-top:10px;">
-          Final score clamped strictly within (0.001, 0.999)
+          Final score strictly between (0, 1)
         </div>
       </div>
     </div>"""
