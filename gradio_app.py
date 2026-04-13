@@ -1,22 +1,17 @@
 """
-DevOps Incident Response — Premium Gradio UI
-=============================================
-A polished, hackathon-grade dashboard for the OpenEnv RL environment.
-
-IMPORTANT: The Blocks instance MUST be named `app` — server/app.py imports it
-via  `from gradio_app import app as gradio_ui`.
+DevOps Incident Response — Gradio UI
+Matches the exact design shown in screenshots.
+Variable MUST stay named `app` — server/app.py imports it.
 """
 
 from __future__ import annotations
-
 import time
 import random
 from typing import Generator
-
 import gradio as gr
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Simulated task data  (mirrors the real environment exactly)
+# Task data
 # ─────────────────────────────────────────────────────────────────────────────
 
 TASKS = {
@@ -99,446 +94,414 @@ TASKS = {
 
 MODEL = "Qwen/Qwen2.5-72B-Instruct"
 
-DIFF_COLORS = {"easy": "#22c55e", "medium": "#eab308", "hard": "#f97316", "expert": "#ef4444"}
-DIFF_BG     = {"easy": "rgba(34,197,94,0.12)", "medium": "rgba(234,179,8,0.12)",
-               "hard": "rgba(249,115,22,0.12)", "expert": "rgba(239,68,68,0.12)"}
-
 # ─────────────────────────────────────────────────────────────────────────────
-# CSS — Premium dark theme
+# CSS  — matches the screenshots exactly
 # ─────────────────────────────────────────────────────────────────────────────
 
-CSS = r"""
-/* ── Google Fonts are loaded via HTML <link> ── */
+CSS = """
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
-/* ── Variables ── */
-:root {
-  --bg-primary:   #0a0c0f;
-  --bg-secondary: #12151a;
-  --bg-card:      #161a21;
-  --bg-elevated:  #1e222a;
-  --border:       rgba(255,255,255,0.07);
-  --border-hover: rgba(255,255,255,0.15);
-  --text-1:       #f0f2f5;
-  --text-2:       #9ca3af;
-  --text-3:       #6b7280;
-  --accent:       #ef4444;
-  --green:        #22c55e;
-  --blue:         #3b82f6;
-  --purple:       #a855f7;
-  --mono:         'JetBrains Mono','IBM Plex Mono',monospace;
-  --sans:         'Inter',system-ui,-apple-system,sans-serif;
-  --display:      'Outfit','Inter',system-ui,sans-serif;
-}
-
-/* ── Resets ── */
-*, *::before, *::after { box-sizing: border-box; }
+/* ── Hard reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body, .gradio-container {
-  background: var(--bg-primary) !important;
-  color: var(--text-1) !important;
-  font-family: var(--sans) !important;
+    background: #0f1117 !important;
+    color: #e2e8f0 !important;
+    font-family: 'IBM Plex Mono', 'Courier New', monospace !important;
 }
 
-/* Kill Gradio's white wrapper cards */
+/* Kill ALL Gradio chrome */
 .gradio-container .block,
 .gradio-container .form,
-.gradio-container .wrap {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 !important;
+.gradio-container .wrap,
+.gradio-container > .main,
+.gradio-container > .main > .wrap {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    gap: 0 !important;
 }
-footer { display:none !important; }
+footer { display: none !important; }
 
-/* ── Glass card mixin ── */
-.glass {
-  background: rgba(22,26,33,0.55) !important;
-  backdrop-filter: blur(20px) saturate(1.4) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(1.4) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 14px !important;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04) !important;
-  transition: border-color .3s ease, transform .3s cubic-bezier(.16,1,.3,1) !important;
-}
-.glass:hover {
-  border-color: var(--border-hover) !important;
+/* ── Card (dark bordered box) ── */
+.card {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    overflow: hidden;
 }
 
-/* ── Gradient border card ── */
-.glow-card {
-  position: relative;
-  background: var(--bg-card) !important;
-  border-radius: 14px !important;
-  border: 1px solid var(--border) !important;
-  overflow: hidden;
-  transition: transform .3s cubic-bezier(.16,1,.3,1), border-color .3s ease !important;
-}
-.glow-card::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: 15px;
-  padding: 1px;
-  background: linear-gradient(135deg, rgba(168,85,247,.25), rgba(59,130,246,.15), transparent 60%);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity .4s ease;
-}
-.glow-card:hover::before { opacity: 1; }
-.glow-card:hover { transform: translateY(-2px); }
-
-/* ── Header nav ── */
-.top-bar {
-  background: rgba(10,12,15,0.65) !important;
-  backdrop-filter: blur(24px) saturate(1.6) !important;
-  border-bottom: 1px solid var(--border);
-  padding: 12px 28px;
-  display: flex; align-items: center; justify-content: space-between;
-  position: sticky; top: 0; z-index: 100;
+/* ── Card header row ── */
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid #21262d;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6b7280;
 }
 
-/* ── Hero ── */
-.hero {
-  position: relative;
-  padding: 64px 32px 48px;
-  overflow: hidden;
+/* ── Top navbar ── */
+.navbar {
+    background: #0d1117;
+    border-bottom: 1px solid #21262d;
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 }
-.hero::before {
-  content: '';
-  position: absolute;
-  top: -40%; left: -10%;
-  width: 60%; height: 140%;
-  background: radial-gradient(ellipse, rgba(168,85,247,0.08) 0%, transparent 70%);
-  pointer-events: none;
-  animation: heroGlow 8s ease-in-out infinite alternate;
+.navbar .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
-.hero::after {
-  content: '';
-  position: absolute;
-  top: -20%; right: -5%;
-  width: 40%; height: 120%;
-  background: radial-gradient(ellipse, rgba(239,68,68,0.06) 0%, transparent 70%);
-  pointer-events: none;
-  animation: heroGlow 6s ease-in-out infinite alternate-reverse;
+.navbar .logo-box {
+    width: 26px; height: 26px;
+    background: #f85149;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
 }
-@keyframes heroGlow {
-  0%   { opacity: 0.6; transform: scale(1); }
-  100% { opacity: 1;   transform: scale(1.1); }
+.navbar .brand-name {
+    font-size: 13px; font-weight: 600; color: #e2e8f0;
 }
-
-.hero h1 {
-  font-family: var(--display) !important;
-  font-size: 44px; font-weight: 700; line-height: 1.1;
-  letter-spacing: -0.03em;
-  margin: 0 0 8px;
-  position: relative; z-index: 1;
+.navbar .brand-sub {
+    font-size: 10px; color: #6b7280; margin-top: 1px;
 }
-.hero h1 span {
-  background: linear-gradient(135deg, #a855f7 0%, #ef4444 50%, #f97316 100%);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.hero .subtitle {
-  font-size: 16px; color: var(--text-2); line-height: 1.7;
-  max-width: 540px; margin-bottom: 20px;
-  position: relative; z-index: 1;
-}
-.hero .tags { display: flex; gap: 8px; flex-wrap: wrap; position: relative; z-index: 1; }
-.hero .tag {
-  font-family: var(--mono); font-size: 10px;
-  padding: 4px 12px; border-radius: 6px;
-  border: 1px solid var(--border); color: var(--text-3);
-  transition: border-color .2s, color .2s;
-}
-.hero .tag:hover { border-color: var(--border-hover); color: var(--text-2); }
-.hero .tag.active { border-color: var(--accent); color: var(--accent); }
-
-/* ── Stat row ── */
-.stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin: 0 32px 32px; }
-.stat-card {
-  padding: 20px 22px;
-}
-.stat-label {
-  font-family: var(--mono); font-size: 10px; font-weight: 500;
-  color: var(--text-3); text-transform: uppercase; letter-spacing: .1em;
-  margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
-}
-.stat-icon { font-size: 13px; }
-.stat-value {
-  font-family: var(--mono); font-size: 28px; font-weight: 600;
-  color: var(--text-1);
-}
-.stat-value.green { color: var(--green); }
-.stat-dots { display: flex; gap: 5px; margin-top: 8px; }
-.stat-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  animation: pulse 2s ease-in-out infinite;
-}
-@keyframes pulse {
-  0%, 100% { opacity: .7; transform: scale(1); }
-  50%      { opacity: 1;  transform: scale(1.15); }
-}
-
-/* ── Tabs ── */
-.tabs { background: transparent !important; }
-.tab-nav {
-  background: var(--bg-secondary) !important;
-  border-bottom: 1px solid var(--border) !important;
-  border-radius: 0 !important;
-  padding: 0 28px !important;
-}
-.tab-nav button {
-  font-family: var(--mono) !important; font-size: 12px !important;
-  color: var(--text-3) !important; background: transparent !important;
-  border: none !important; padding: 14px 18px !important;
-  transition: color .2s !important; letter-spacing: .02em !important;
-}
-.tab-nav button:hover { color: var(--text-2) !important; }
-.tab-nav button.selected {
-  color: var(--text-1) !important;
-  box-shadow: inset 0 -2px 0 var(--accent) !important;
-}
-
-/* ── Section card ── */
-.section-card {
-  background: var(--bg-card) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 14px !important;
-  overflow: hidden;
-  margin-bottom: 20px;
-  transition: border-color .3s ease !important;
-}
-.section-card:hover { border-color: var(--border-hover) !important; }
-.section-hdr {
-  padding: 14px 20px;
-  background: rgba(255,255,255,0.015);
-  border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
-}
-.section-hdr .title {
-  font-family: var(--mono); font-size: 11px; font-weight: 500;
-  color: var(--text-3); text-transform: uppercase; letter-spacing: .08em;
-}
-.section-hdr .badge {
-  font-family: var(--mono); font-size: 10px; color: var(--text-3);
-}
-
-/* ── Terminal ── */
-#terminal-output textarea {
-  background: #08090c !important;
-  color: #c8d0da !important;
-  font-family: var(--mono) !important;
-  font-size: 12.5px !important;
-  line-height: 2 !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 12px !important;
-  padding: 20px !important;
-  box-shadow: inset 0 2px 12px rgba(0,0,0,0.4) !important;
-  resize: none !important;
-}
-
-/* ── Buttons ── */
-button.primary, button.lg {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
-  border: none !important; color: #fff !important;
-  font-family: var(--mono) !important; font-size: 12px !important; font-weight: 500 !important;
-  border-radius: 8px !important; padding: 10px 24px !important;
-  box-shadow: 0 4px 14px rgba(239,68,68,0.3) !important;
-  transition: transform .15s, box-shadow .15s !important;
-  cursor: pointer !important;
-}
-button.primary:hover, button.lg:hover {
-  transform: translateY(-1px) !important;
-  box-shadow: 0 6px 20px rgba(239,68,68,0.4) !important;
-}
-button.secondary {
-  background: var(--bg-elevated) !important;
-  border: 1px solid var(--border) !important;
-  color: var(--text-2) !important;
-  font-family: var(--mono) !important; font-size: 12px !important;
-  border-radius: 8px !important;
-  transition: border-color .2s, color .2s !important;
-}
-button.secondary:hover {
-  border-color: var(--border-hover) !important;
-  color: var(--text-1) !important;
-}
-
-/* ── Score bars ── */
-.score-row {
-  display: flex; align-items: center; gap: 12px;
-  margin-bottom: 14px; font-family: var(--mono); font-size: 11px;
-}
-.score-label { color: var(--text-3); min-width: 150px; }
-.score-bar-bg {
-  flex: 1; height: 6px; background: var(--bg-elevated);
-  border-radius: 3px; overflow: hidden;
-}
-.score-bar-fill {
-  height: 100%; border-radius: 3px;
-  transition: width 1s cubic-bezier(.16,1,.3,1);
-  box-shadow: 0 0 8px currentColor;
-}
-.score-num { color: var(--text-1); min-width: 40px; text-align: right; font-weight: 500; }
-
-/* ── Reward table ── */
-.rtable { width: 100%; border-collapse: collapse; }
-.rtable td {
-  padding: 10px 20px; border-bottom: 1px solid rgba(255,255,255,0.04);
-  font-size: 12px; font-family: var(--mono);
-}
-.rtable tr:last-child td { border-bottom: none; }
-.rtable .c-action { color: var(--text-1); font-weight: 500; }
-.rtable .c-desc   { color: var(--text-3); }
-.rval-pos {
-  color: #4ade80; background: rgba(34,197,94,0.1);
-  padding: 3px 10px; border-radius: 4px; font-weight: 500;
-}
-.rval-neg {
-  color: #f87171; background: rgba(239,68,68,0.1);
-  padding: 3px 10px; border-radius: 4px; font-weight: 500;
-}
-
-/* ── Route table ── */
-.api-tbl { width: 100%; border-collapse: collapse; }
-.api-tbl td {
-  padding: 9px 20px; border-bottom: 1px solid rgba(255,255,255,0.04);
-  font-family: var(--mono); font-size: 11px;
-}
-.api-tbl tr:last-child td { border-bottom: none; }
-.m-get {
-  background: rgba(34,197,94,0.12); color: #4ade80;
-  padding: 2px 8px; border-radius: 4px; font-size: 9px; font-weight: 600;
-}
-.m-post {
-  background: rgba(59,130,246,0.12); color: #60a5fa;
-  padding: 2px 8px; border-radius: 4px; font-size: 9px; font-weight: 600;
-}
-.rp { color: var(--text-1); font-weight: 500; }
-.rd { color: var(--text-3); }
-
-/* ── Dep graph nodes ── */
-.dn {
-  display: inline-block; padding: 4px 12px; border-radius: 6px;
-  font-family: var(--mono); font-size: 10px; margin: 3px;
-  border: 1px solid; transition: transform .2s;
-}
-.dn:hover { transform: scale(1.05); }
-.dn-r { border-color: rgba(239,68,68,0.4); color: #f87171; background: rgba(239,68,68,0.08); }
-.dn-o { border-color: rgba(249,115,22,0.4); color: #fb923c; background: rgba(249,115,22,0.08); }
-.dn-y { border-color: rgba(234,179,8,0.4);  color: #facc15; background: rgba(234,179,8,0.08); }
-.dn-b { border-color: rgba(59,130,246,0.4); color: #60a5fa; background: rgba(59,130,246,0.08); }
-.dn-arr { color: var(--text-3); font-family: var(--mono); font-size: 11px; margin: 0 4px; }
-
-/* ── Task step flow ── */
-.step-flow {
-  display: flex; flex-direction: column; gap: 0; margin-top: 12px;
-}
-.step-item {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 16px; position: relative;
-  border-left: 2px solid var(--border);
-  transition: background .2s;
-}
-.step-item:hover { background: rgba(255,255,255,0.02); }
-.step-item:last-child { border-left-color: transparent; }
-.step-num {
-  width: 24px; height: 24px; border-radius: 50%;
-  background: var(--bg-elevated); border: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--mono); font-size: 10px; color: var(--text-3);
-  flex-shrink: 0; position: relative; z-index: 1;
-}
-.step-action {
-  font-family: var(--mono); font-size: 11px; color: var(--text-2); flex: 1;
-}
-.step-reward {
-  font-family: var(--mono); font-size: 11px; font-weight: 500;
-}
-
-/* ── Difficulty badges ── */
-.diff-badge {
-  font-family: var(--mono); font-size: 10px; font-weight: 600;
-  padding: 3px 10px; border-radius: 6px;
-  text-transform: uppercase; letter-spacing: .06em;
-}
-
-/* ── Labels ── */
-label span {
-  color: var(--text-3) !important; font-size: 11px !important;
-  font-family: var(--mono) !important;
-}
-
-/* ── Live dot ── */
-@keyframes livePulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }
-  50%      { box-shadow: 0 0 0 4px rgba(34,197,94,0); }
+.navbar .right {
+    display: flex; align-items: center; gap: 14px; font-size: 11px;
 }
 .live-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--green); display: inline-block;
-  animation: livePulse 2s ease-in-out infinite;
+    display: inline-flex; align-items: center; gap: 6px; color: #3fb950;
+}
+.live-dot::before {
+    content: '';
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%; background: #3fb950;
+}
+.version-badge {
+    border: 1px solid #30363d; border-radius: 5px;
+    padding: 2px 8px; color: #8b949e; font-size: 10px;
 }
 
-/* ── Footer ── */
-.ft {
-  border-top: 1px solid var(--border);
-  padding: 20px 32px; margin-top: 32px;
-  display: flex; align-items: center; justify-content: space-between;
-  font-family: var(--mono); font-size: 11px; color: var(--text-3);
+/* ── Hero section ── */
+.hero {
+    padding: 48px 28px 36px;
+    background: #0f1117;
+    border-bottom: 1px solid #21262d;
 }
-.ft a { color: var(--text-3); text-decoration: none; transition: color .2s; }
-.ft a:hover { color: var(--text-1); }
+.hero .eyebrow {
+    font-size: 11px; font-weight: 500;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: #f85149; margin-bottom: 14px;
+}
+.hero h1 {
+    font-size: 40px; font-weight: 700; line-height: 1.15;
+    color: #f0f6fc; margin-bottom: 18px;
+    font-family: 'IBM Plex Mono', monospace !important;
+}
+.hero h1 span { color: #f85149; }
+.hero .desc {
+    font-size: 14px; line-height: 1.75; color: #8b949e;
+    max-width: 520px; margin-bottom: 22px;
+}
+.hero .tags { display: flex; gap: 8px; flex-wrap: wrap; }
+.hero .tag {
+    font-size: 11px; color: #8b949e;
+    border: 1px solid #30363d; border-radius: 5px;
+    padding: 4px 12px; transition: color .2s, border-color .2s;
+}
+.hero .tag.active { color: #f85149; border-color: #f85149; }
+
+/* ── Stat grid ── */
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    padding: 24px 28px;
+    background: #0f1117;
+    border-bottom: 1px solid #21262d;
+}
+.stat-card {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 16px 18px;
+}
+.stat-card .lbl {
+    font-size: 10px; color: #6b7280;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    margin-bottom: 6px;
+}
+.stat-card .val {
+    font-size: 26px; font-weight: 600; color: #e2e8f0;
+}
+.stat-card .val.green { color: #3fb950; }
+
+/* ── Simulation controls ── */
+.sim-controls {
+    display: flex; align-items: center; gap: 10px;
+    padding: 16px 28px;
+    background: #0f1117;
+    border-bottom: 1px solid #21262d;
+}
+
+/* Gradio Dropdown overrides */
+.gradio-container select,
+.gradio-container .wrap select,
+.gradio-container input[type=text] {
+    background: #1c2128 !important;
+    border: 1px solid #30363d !important;
+    border-radius: 6px !important;
+    color: #e2e8f0 !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 12px !important;
+    padding: 8px 12px !important;
+}
+
+/* Run simulation button */
+button.primary, button.lg {
+    background: #f85149 !important;
+    border: none !important;
+    border-radius: 6px !important;
+    color: #fff !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 12px !important; font-weight: 500 !important;
+    padding: 9px 20px !important;
+    cursor: pointer !important;
+    transition: background .15s !important;
+}
+button.primary:hover, button.lg:hover {
+    background: #da3633 !important;
+}
+
+/* Clear button */
+button.secondary {
+    background: transparent !important;
+    border: 1px solid #30363d !important;
+    border-radius: 6px !important;
+    color: #8b949e !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 12px !important;
+    padding: 9px 20px !important;
+    transition: border-color .15s, color .15s !important;
+}
+button.secondary:hover {
+    border-color: #8b949e !important;
+    color: #e2e8f0 !important;
+}
+
+/* ── Terminal window ── */
+.terminal-wrap {
+    margin: 0 28px 0;
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    overflow: hidden;
+}
+.terminal-titlebar {
+    background: #1c2128;
+    border-bottom: 1px solid #21262d;
+    padding: 8px 14px;
+    display: flex; align-items: center; gap: 8px;
+}
+.terminal-dots { display: flex; gap: 5px; }
+.tdot {
+    width: 11px; height: 11px; border-radius: 50%;
+}
+.tdot-r { background: #f85149; }
+.tdot-y { background: #e3b341; }
+.tdot-g { background: #3fb950; }
+.terminal-title {
+    margin: 0 auto;
+    font-size: 11px; color: #6b7280;
+}
+
+/* Override Gradio textbox to look like terminal */
+#terminal-output textarea {
+    background: #0d1117 !important;
+    color: #8b949e !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 12px !important;
+    line-height: 1.8 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 16px 18px !important;
+    box-shadow: none !important;
+    resize: none !important;
+}
+#terminal-output label { display: none !important; }
+#terminal-output .wrap { padding: 0 !important; }
+#terminal-output { margin: 0 !important; }
+
+/* ── Main content sections ── */
+.content-area {
+    padding: 24px 28px;
+    background: #0f1117;
+}
+
+/* ── Task list (in Environment tab left column) ── */
+.task-list-card { margin-bottom: 0; }
+.task-item {
+    display: flex;
+    align-items: center;
+    padding: 14px 16px;
+    border-bottom: 1px solid #21262d;
+    gap: 14px;
+    transition: background .15s;
+}
+.task-item:last-child { border-bottom: none; }
+.task-item:hover { background: rgba(255,255,255,0.02); }
+.task-badge {
+    font-size: 10px; font-weight: 600; padding: 3px 8px;
+    border-radius: 5px; min-width: 52px; text-align: center;
+    letter-spacing: 0.04em;
+}
+.badge-easy   { background: rgba(63,185,80,0.15);  color: #3fb950; border: 1px solid rgba(63,185,80,0.3); }
+.badge-medium { background: rgba(227,179,65,0.15); color: #e3b341; border: 1px solid rgba(227,179,65,0.3); }
+.badge-hard   { background: rgba(249,115,22,0.15); color: #f97316; border: 1px solid rgba(249,115,22,0.3); }
+.badge-expert { background: rgba(248,81,73,0.15);  color: #f85149; border: 1px solid rgba(248,81,73,0.3); }
+
+.task-item .tinfo { flex: 1; }
+.task-item .tname { font-size: 14px; font-weight: 500; color: #e2e8f0; margin-bottom: 3px; }
+.task-item .tsub  { font-size: 11px; color: #6b7280; }
+.task-item .tdash { color: #30363d; font-size: 14px; }
+.task-item .tline { width: 2px; height: 100%; background: #f85149; align-self: stretch; border-radius: 2px; }
+
+/* ── Reward table ── */
+.reward-row {
+    display: flex; align-items: center;
+    padding: 10px 16px;
+    border-bottom: 1px solid #21262d;
+    font-size: 12px; gap: 12px;
+}
+.reward-row:last-child { border-bottom: none; }
+.rname  { font-weight: 600; color: #e2e8f0; min-width: 160px; }
+.rdesc  { color: #6b7280; flex: 1; }
+.rval-pos { background: rgba(63,185,80,0.12); color: #3fb950; padding: 3px 10px; border-radius: 4px; font-weight: 600; }
+.rval-neg { background: rgba(248,81,73,0.12); color: #f85149; padding: 3px 10px; border-radius: 4px; font-weight: 600; }
+
+/* ── Dependency graph nodes ── */
+.dep-row { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-bottom: 8px; }
+.dep-row:last-child { margin-bottom: 0; }
+.dn {
+    display: inline-block;
+    padding: 4px 10px; border-radius: 5px; font-size: 11px;
+    border: 1px solid; font-family: 'IBM Plex Mono', monospace;
+    margin: 2px;
+}
+.dn-r { border-color: rgba(248,81,73,.5);  color: #f85149; background: rgba(248,81,73,.08); }
+.dn-o { border-color: rgba(249,115,22,.5); color: #f97316; background: rgba(249,115,22,.08); }
+.dn-y { border-color: rgba(227,179,65,.5); color: #e3b341; background: rgba(227,179,65,.08); }
+.dn-b { border-color: rgba(56,139,253,.5); color: #58a6ff; background: rgba(56,139,253,.08); }
+.dn-arr { color: #6b7280; font-size: 11px; margin: 0 2px; }
+.dn-plus { color: #6b7280; font-size: 12px; margin: 0 2px; }
+
+/* ── Grader weights bars ── */
+.gw-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 0; font-size: 11px; color: #8b949e;
+}
+.gw-label { min-width: 130px; }
+.gw-bar-bg { flex: 1; height: 4px; background: #21262d; border-radius: 2px; }
+.gw-bar-fill { height: 100%; border-radius: 2px; }
+.gw-pct { min-width: 32px; text-align: right; }
+
+/* ── API routes ── */
+.api-row {
+    display: flex; align-items: center;
+    padding: 9px 16px; border-bottom: 1px solid #21262d;
+    font-size: 12px;
+}
+.api-row:last-child { border-bottom: none; }
+.api-method {
+    font-size: 10px; font-weight: 600; padding: 2px 7px;
+    border-radius: 4px; min-width: 38px; text-align: center;
+    margin-right: 14px;
+}
+.mget  { background: rgba(63,185,80,0.12);  color: #3fb950; }
+.mpost { background: rgba(56,139,253,0.12); color: #58a6ff; }
+.api-path { color: #e2e8f0; font-weight: 500; min-width: 130px; }
+.api-desc { color: #6b7280; margin-left: auto; }
+
+/* ── Score bars (simulation tab) ── */
+.score-row {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 14px; font-size: 11px; color: #8b949e;
+}
+.score-label { min-width: 150px; }
+.score-bar-bg {
+    flex: 1; height: 5px; background: #21262d; border-radius: 3px; overflow: hidden;
+}
+.score-bar-fill { height: 100%; border-radius: 3px; transition: width 1s ease; }
+.score-num { min-width: 38px; text-align: right; color: #e2e8f0; font-weight: 500; }
+
+/* ── Gradio tab overrides ── */
+.tabs { background: transparent !important; }
+.tab-nav {
+    background: #0d1117 !important;
+    border-bottom: 1px solid #21262d !important;
+    padding: 0 28px !important;
+    border-radius: 0 !important;
+}
+.tab-nav button {
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 12px !important;
+    color: #6b7280 !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 12px 16px !important;
+    letter-spacing: .03em !important;
+    transition: color .2s !important;
+}
+.tab-nav button:hover { color: #8b949e !important; }
+.tab-nav button.selected {
+    color: #e2e8f0 !important;
+    box-shadow: inset 0 -2px 0 #f85149 !important;
+}
+
+/* Spacing helpers */
+.row { display: flex; gap: 16px; }
+.col { flex: 1; min-width: 0; }
+.mb16 { margin-bottom: 16px; }
+
+/* label hiding */
+label > span:first-child { display: none !important; }
 """
 
 # ─────────────────────────────────────────────────────────────────────────────
-# HTML fragments
+# Static HTML blocks
 # ─────────────────────────────────────────────────────────────────────────────
 
-FONTS = (
-    '<link rel="preconnect" href="https://fonts.googleapis.com">'
-    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
-    '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700'
-    '&family=JetBrains+Mono:wght@400;500;600'
-    '&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">'
-)
-
-NAV_HTML = f"""
-{FONTS}
-<div class="top-bar">
-  <div style="display:flex;align-items:center;gap:10px;">
-    <div style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;
-                background:linear-gradient(135deg,#a855f7,#ef4444);">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-        <path d="M8 2L14 5.5V10.5L8 14L2 10.5V5.5L8 2Z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
-        <circle cx="8" cy="8" r="2" fill="#fff"/>
-      </svg>
-    </div>
+NAV_HTML = """
+<div class="navbar">
+  <div class="brand">
+    <div class="logo-box">⬡</div>
     <div>
-      <div style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text-1)">devops-incident-response</div>
-      <div style="font-family:var(--mono);font-size:10px;color:var(--text-3)">OpenEnv · RL Testbed</div>
+      <div class="brand-name">devops-incident-response</div>
+      <div class="brand-sub">OpenEnv · RL Testbed</div>
     </div>
   </div>
-  <div style="display:flex;align-items:center;gap:16px;">
-    <span style="display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--green)">
-      <span class="live-dot"></span> API live
-    </span>
-    <span style="font-family:var(--mono);font-size:10px;color:var(--text-3);
-                 border:1px solid var(--border);padding:3px 10px;border-radius:6px;">v1.0.0</span>
+  <div class="right">
+    <span class="live-dot">&nbsp;API live</span>
+    <span class="version-badge">v1.0.0</span>
   </div>
 </div>
 """
 
 HERO_HTML = """
 <div class="hero">
-  <h1>DevOps Incident <span>Response</span></h1>
-  <p class="subtitle">
-    RL Environment for AI Agent Evaluation — deterministic grading across four
-    difficulty tiers with dense reward shaping, cascade-aware dependency graphs,
-    and real-time scoring.
+  <div class="eyebrow">Meta PyTorch Hackathon &nbsp;·&nbsp; OpenEnv</div>
+  <h1>SRE Triage <span>RL Environment</span></h1>
+  <p class="desc">
+    A deterministic reinforcement learning testbed that stress-tests AI agents on
+    production-style incident response — dependency tracing, root-cause
+    diagnosis, and safe remediation across four difficulty tiers.
   </p>
   <div class="tags">
     <span class="tag active">openenv</span>
@@ -550,173 +513,194 @@ HERO_HTML = """
 </div>
 """
 
-STATS_HTML = """
-<div class="stats">
-  <div class="glass stat-card">
-    <div class="stat-label"><span class="stat-icon">📊</span> TASKS</div>
-    <div class="stat-value">4</div>
-    <div class="stat-dots">
-      <span class="stat-dot" style="background:#22c55e;animation-delay:0s"></span>
-      <span class="stat-dot" style="background:#eab308;animation-delay:.15s"></span>
-      <span class="stat-dot" style="background:#f97316;animation-delay:.3s"></span>
-      <span class="stat-dot" style="background:#ef4444;animation-delay:.45s"></span>
+STAT_GRID_HTML = """
+<div class="stat-grid">
+  <div class="stat-card"><div class="lbl">Tasks</div><div class="val">4</div></div>
+  <div class="stat-card"><div class="lbl">Services</div><div class="val">6</div></div>
+  <div class="stat-card"><div class="lbl">Grader</div><div class="val green">DET</div></div>
+  <div class="stat-card"><div class="lbl">Port</div><div class="val" style="font-size:20px">8000</div></div>
+</div>
+"""
+
+TERM_HEADER_HTML = """
+<div class="terminal-titlebar">
+  <div class="terminal-dots">
+    <span class="tdot tdot-r"></span>
+    <span class="tdot tdot-y"></span>
+    <span class="tdot tdot-g"></span>
+  </div>
+  <span class="terminal-title">inference.py — devops_incident_env</span>
+</div>
+"""
+
+# Task list for Environment tab
+TASK_LIST_HTML = """
+<div class="card task-list-card">
+  <div class="card-header">
+    <span>Tasks</span>
+    <span>4 scenarios</span>
+  </div>
+
+  <div class="task-item">
+    <div style="width:3px;height:40px;background:#f85149;border-radius:2px;flex-shrink:0"></div>
+    <span class="task-badge badge-easy">easy</span>
+    <div class="tinfo">
+      <div class="tname">Single Service Crash</div>
+      <div class="tsub">api_gateway &nbsp;·&nbsp; max 8 steps</div>
     </div>
+    <span class="tdash">—</span>
   </div>
-  <div class="glass stat-card">
-    <div class="stat-label"><span class="stat-icon">⚡</span> ACTIONS</div>
-    <div class="stat-value">7</div>
-    <div class="stat-dots">
-      <span class="stat-dot" style="background:#3b82f6;animation-delay:0s"></span>
-      <span class="stat-dot" style="background:#3b82f6;animation-delay:.1s"></span>
-      <span class="stat-dot" style="background:#3b82f6;animation-delay:.2s"></span>
+
+  <div class="task-item">
+    <div style="width:3px;height:40px;background:transparent;border-radius:2px;flex-shrink:0"></div>
+    <span class="task-badge badge-medium">medium</span>
+    <div class="tinfo">
+      <div class="tname">Memory Leak in Order Service</div>
+      <div class="tsub">order_service &nbsp;·&nbsp; max 10 steps</div>
     </div>
+    <span class="tdash">—</span>
   </div>
-  <div class="glass stat-card">
-    <div class="stat-label"><span class="stat-icon">🎯</span> GRADER</div>
-    <div class="stat-value green">DET</div>
+
+  <div class="task-item">
+    <div style="width:3px;height:40px;background:transparent;border-radius:2px;flex-shrink:0"></div>
+    <span class="task-badge badge-hard">hard</span>
+    <div class="tinfo">
+      <div class="tname">Cascading DB Disk Saturation</div>
+      <div class="tsub">database + payment + order &nbsp;·&nbsp; max 12 steps</div>
+    </div>
+    <span class="tdash">—</span>
   </div>
-  <div class="glass stat-card">
-    <div class="stat-label"><span class="stat-icon">🔌</span> PORT</div>
-    <div class="stat-value" style="font-size:20px">8000</div>
+
+  <div class="task-item">
+    <div style="width:3px;height:40px;background:transparent;border-radius:2px;flex-shrink:0"></div>
+    <span class="task-badge badge-expert">expert</span>
+    <div class="tinfo">
+      <div class="tname">Compound Multi-Root Failure</div>
+      <div class="tsub">database + payment_service &nbsp;·&nbsp; max 14 steps</div>
+    </div>
+    <span class="tdash">—</span>
   </div>
 </div>
 """
 
-DEP_GRAPH_HTML = """
-<div class="section-card">
-  <div class="section-hdr">
-    <span class="title">Service Dependency Graph</span>
-    <span class="badge">cascade-aware</span>
+REWARD_HTML = """
+<div class="card mt16" style="margin-top:16px">
+  <div class="card-header">
+    <span>Reward System</span>
+    <span>dense + final</span>
   </div>
-  <div style="padding:20px;display:flex;flex-direction:column;gap:12px">
-    <div>
+  <div class="reward-row"><span class="rname">root investigation</span><span class="rdesc">inspecting the true failure service</span><span class="rval-pos">+0.04</span></div>
+  <div class="reward-row"><span class="rname">affected service</span><span class="rdesc">tracing symptom dependencies</span><span class="rval-pos">+0.03</span></div>
+  <div class="reward-row"><span class="rname">correct diagnosis</span><span class="rdesc">identifying the exact failure mode</span><span class="rval-pos">+0.08</span></div>
+  <div class="reward-row"><span class="rname">correct fix</span><span class="rdesc">right remediation, right service</span><span class="rval-pos">+0.12</span></div>
+  <div class="reward-row"><span class="rname">verification</span><span class="rdesc">confirmed recovery</span><span class="rval-pos">+0.04</span></div>
+  <div class="reward-row"><span class="rname">invalid action</span><span class="rdesc">wrong, redundant, or destructive</span><span class="rval-neg">-0.03</span></div>
+</div>
+"""
+
+DEP_GRAPH_HTML = """
+<div class="card">
+  <div class="card-header">
+    <span>Service Dependency Graph</span>
+  </div>
+  <div style="padding:18px 16px">
+    <div class="dep-row">
       <span class="dn dn-r">api_gateway</span>
       <span class="dn-arr">→</span>
       <span class="dn dn-o">auth_service</span>
-      <span class="dn-arr">+</span>
+      <span class="dn-plus">+</span>
       <span class="dn dn-o">order_service</span>
     </div>
-    <div style="margin-left:20px">
-      <span class="dn dn-o">order_service</span>
+    <div class="dep-row" style="margin-left:20px">
+      <span class="dn dn-y">order_service</span>
       <span class="dn-arr">→</span>
       <span class="dn dn-y">payment_service</span>
-      <span class="dn-arr">+</span>
+      <span class="dn-plus">+</span>
       <span class="dn dn-b">database</span>
     </div>
-    <div style="margin-left:20px">
+    <div class="dep-row" style="margin-left:20px">
       <span class="dn dn-o">auth_service</span>
       <span class="dn-arr">→</span>
       <span class="dn dn-y">user_service</span>
       <span class="dn-arr">→</span>
       <span class="dn dn-b">database</span>
     </div>
-    <div style="margin-left:20px">
+    <div class="dep-row" style="margin-left:20px">
       <span class="dn dn-y">payment_service</span>
       <span class="dn-arr">→</span>
       <span class="dn dn-b">database</span>
     </div>
-    <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);
-                font-family:var(--mono);font-size:10px;color:var(--text-3)">
-      Agents must trace failures downstream — symptom-level fixes earn no resolution score.
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid #21262d;
+                font-size:11px;color:#6b7280">
+      Agents must trace root causes downstream, not patch surface symptoms.
     </div>
   </div>
 </div>
 """
 
-REWARD_HTML = """
-<div class="section-card">
-  <div class="section-hdr">
-    <span class="title">Reward System</span>
-    <span class="badge">dense + deterministic</span>
+GRADER_HTML = """
+<div class="card">
+  <div class="card-header">
+    <span>Grader Weights</span>
+    <span>score: —</span>
   </div>
-  <table class="rtable">
-    <tr><td class="c-action">root_cause_investigation</td><td class="c-desc">Inspecting the true failure service</td><td><span class="rval-pos">+0.04</span></td></tr>
-    <tr><td class="c-action">affected_service</td><td class="c-desc">Tracing symptom dependencies</td><td><span class="rval-pos">+0.03</span></td></tr>
-    <tr><td class="c-action">correct_diagnosis</td><td class="c-desc">Identifying the exact failure mode</td><td><span class="rval-pos">+0.08</span></td></tr>
-    <tr><td class="c-action">correct_fix</td><td class="c-desc">Right remediation on right service</td><td><span class="rval-pos">+0.12</span></td></tr>
-    <tr><td class="c-action">verification</td><td class="c-desc">Confirmed service recovery</td><td><span class="rval-pos">+0.04</span></td></tr>
-    <tr><td class="c-action">invalid_action</td><td class="c-desc">Wrong, redundant, or destructive</td><td><span class="rval-neg">−0.03</span></td></tr>
-  </table>
+  <div style="padding:18px 16px;">
+    <div class="gw-row">
+      <span class="gw-label">root identification</span>
+      <div class="gw-bar-bg"><div class="gw-bar-fill" style="width:35%;background:#f85149"></div></div>
+      <span class="gw-pct">35%</span>
+    </div>
+    <div class="gw-row">
+      <span class="gw-label">resolution</span>
+      <div class="gw-bar-bg"><div class="gw-bar-fill" style="width:30%;background:#f97316"></div></div>
+      <span class="gw-pct">30%</span>
+    </div>
+    <div class="gw-row">
+      <span class="gw-label">efficiency</span>
+      <div class="gw-bar-bg"><div class="gw-bar-fill" style="width:20%;background:#e3b341"></div></div>
+      <span class="gw-pct">20%</span>
+    </div>
+    <div class="gw-row">
+      <span class="gw-label">safety</span>
+      <div class="gw-bar-bg"><div class="gw-bar-fill" style="width:15%;background:#3fb950"></div></div>
+      <span class="gw-pct">15%</span>
+    </div>
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid #21262d;
+                font-size:11px;color:#6b7280">
+      Final score clamped strictly within (0.001, 0.999)
+    </div>
+  </div>
 </div>
 """
 
 ROUTES_HTML = """
-<div class="section-card">
-  <div class="section-hdr">
-    <span class="title">API Routes</span>
-    <span class="badge">port 8000</span>
+<div class="card" style="margin-bottom:0">
+  <div class="card-header">
+    <span>API Routes</span>
+    <span>port 8000</span>
   </div>
-  <table class="api-tbl">
-    <tr><td><span class="m-get">GET</span></td><td class="rp">/</td><td class="rd">environment manifest</td></tr>
-    <tr><td><span class="m-get">GET</span></td><td class="rp">/health</td><td class="rd">liveness check</td></tr>
-    <tr><td><span class="m-get">GET</span></td><td class="rp">/tasks</td><td class="rd">list all task definitions</td></tr>
-    <tr><td><span class="m-post">POST</span></td><td class="rp">/reset</td><td class="rd">start episode {task_id, seed}</td></tr>
-    <tr><td><span class="m-post">POST</span></td><td class="rp">/step</td><td class="rd">execute action → observation + reward</td></tr>
-    <tr><td><span class="m-get">GET</span></td><td class="rp">/state</td><td class="rd">full environment state</td></tr>
-    <tr><td><span class="m-get">GET</span></td><td class="rp">/grader</td><td class="rd">deterministic episode score</td></tr>
-    <tr><td><span class="m-get">GET</span></td><td class="rp">/baseline</td><td class="rd">rule-based baseline action</td></tr>
-    <tr><td><span class="m-get">GET</span></td><td class="rp">/sample_action</td><td class="rd">example valid action payload</td></tr>
-  </table>
-</div>
-"""
-
-ACTIONS_HTML = """
-<div class="section-card">
-  <div class="section-hdr">
-    <span class="title">Valid Actions</span>
-    <span class="badge">7 types</span>
-  </div>
-  <div style="padding:16px 20px;display:flex;flex-direction:column;gap:8px">
-    <div style="display:flex;align-items:center;gap:8px">
-      <span style="width:6px;height:6px;border-radius:50%;background:var(--blue)"></span>
-      <span style="font-family:var(--mono);font-size:11px;color:var(--text-1)">read_logs</span>
-      <span style="font-family:var(--mono);font-size:10px;color:var(--text-3);margin-left:auto">observe</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <span style="width:6px;height:6px;border-radius:50%;background:var(--blue)"></span>
-      <span style="font-family:var(--mono);font-size:11px;color:var(--text-1)">query_metrics</span>
-      <span style="font-family:var(--mono);font-size:10px;color:var(--text-3);margin-left:auto">observe</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <span style="width:6px;height:6px;border-radius:50%;background:var(--blue)"></span>
-      <span style="font-family:var(--mono);font-size:11px;color:var(--text-1)">inspect_dependencies</span>
-      <span style="font-family:var(--mono);font-size:10px;color:var(--text-3);margin-left:auto">observe</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <span style="width:6px;height:6px;border-radius:50%;background:var(--blue)"></span>
-      <span style="font-family:var(--mono);font-size:11px;color:var(--text-1)">list_services</span>
-      <span style="font-family:var(--mono);font-size:10px;color:var(--text-3);margin-left:auto">observe</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <span style="width:6px;height:6px;border-radius:50%;background:#eab308"></span>
-      <span style="font-family:var(--mono);font-size:11px;color:var(--text-1)">diagnose</span>
-      <span style="font-family:var(--mono);font-size:10px;color:var(--text-3);margin-left:auto">assess</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <span style="width:6px;height:6px;border-radius:50%;background:#ef4444"></span>
-      <span style="font-family:var(--mono);font-size:11px;color:var(--text-1)">apply_fix</span>
-      <span style="font-family:var(--mono);font-size:10px;color:var(--text-3);margin-left:auto">remediate</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <span style="width:6px;height:6px;border-radius:50%;background:var(--green)"></span>
-      <span style="font-family:var(--mono);font-size:11px;color:var(--text-1)">verify_health</span>
-      <span style="font-family:var(--mono);font-size:10px;color:var(--text-3);margin-left:auto">confirm</span>
-    </div>
-    <div style="margin-top:8px;padding-top:10px;border-top:1px solid var(--border);
-                font-family:var(--mono);font-size:10px;color:var(--text-3)">
-      POST /step with &#123;action_type, service, diagnosis?, fix?&#125;
-    </div>
-  </div>
+  <div class="api-row"><span class="api-method mget">GET</span><span class="api-path">/</span><span class="api-desc">environment manifest</span></div>
+  <div class="api-row"><span class="api-method mget">GET</span><span class="api-path">/health</span><span class="api-desc">liveness check</span></div>
+  <div class="api-row"><span class="api-method mget">GET</span><span class="api-path">/tasks</span><span class="api-desc">list all task definitions</span></div>
+  <div class="api-row"><span class="api-method mpost">POST</span><span class="api-path">/reset</span><span class="api-desc">start episode [task_id, seed]</span></div>
+  <div class="api-row"><span class="api-method mpost">POST</span><span class="api-path">/step</span><span class="api-desc">execute action → observation + reward</span></div>
+  <div class="api-row"><span class="api-method mget">GET</span><span class="api-path">/state</span><span class="api-desc">full environment state</span></div>
+  <div class="api-row"><span class="api-method mget">GET</span><span class="api-path">/grader</span><span class="api-desc">deterministic episode score</span></div>
+  <div class="api-row"><span class="api-method mget">GET</span><span class="api-path">/baseline</span><span class="api-desc">rule-based baseline action</span></div>
+  <div class="api-row"><span class="api-method mget">GET</span><span class="api-path">/sample_action</span><span class="api-desc">example valid action payload</span></div>
 </div>
 """
 
 FOOTER_HTML = """
-<div class="ft">
-  <span>devops-incident-response · OpenEnv · aryanosh</span>
+<div style="border-top:1px solid #21262d;padding:16px 28px;
+            display:flex;align-items:center;justify-content:space-between;
+            font-size:11px;color:#6b7280;margin-top:24px">
+  <span>devops-incident-response &nbsp;·&nbsp; OpenEnv &nbsp;·&nbsp; aryanosh</span>
   <div style="display:flex;gap:20px">
-    <a href="https://github.com/aryanosh/devops-incident-response" target="_blank">GitHub</a>
-    <a href="/tasks">Tasks JSON</a>
-    <a href="/">Manifest</a>
+    <a href="https://github.com/aryanosh/devops-incident-response" target="_blank"
+       style="color:#6b7280;text-decoration:none">GitHub</a>
+    <a href="/tasks" style="color:#6b7280;text-decoration:none">Tasks JSON</a>
+    <a href="/" style="color:#6b7280;text-decoration:none">Manifest</a>
   </div>
 </div>
 """
@@ -728,34 +712,33 @@ FOOTER_HTML = """
 def make_score_bars_html(task_key: str) -> str:
     g = TASKS[task_key]["grader"]
     score = TASKS[task_key]["score"]
-    items = [
-        ("root identification", g["root_identification"], "#ef4444"),
+    bars = [
+        ("root identification", g["root_identification"], "#f85149"),
         ("resolution",          g["resolution"],          "#f97316"),
-        ("efficiency",          g["efficiency"],          "#eab308"),
-        ("safety",              g["safety"],              "#22c55e"),
+        ("efficiency",          g["efficiency"],          "#e3b341"),
+        ("safety",              g["safety"],              "#3fb950"),
     ]
     rows = ""
-    for label, val, color in items:
+    for label, val, color in bars:
         pct = int(val * 100)
         rows += f"""
         <div class="score-row">
           <span class="score-label">{label}</span>
           <div class="score-bar-bg">
-            <div class="score-bar-fill" style="width:{pct}%;background:{color};color:{color}"></div>
+            <div class="score-bar-fill" style="width:{pct}%;background:{color}"></div>
           </div>
           <span class="score-num">{pct}%</span>
         </div>"""
     return f"""
-    <div class="section-card">
-      <div class="section-hdr">
-        <span class="title">Grader Breakdown</span>
-        <span style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text-1)">
-          score: {score:.3f}
-        </span>
+    <div class="card" style="margin-top:16px">
+      <div class="card-header">
+        <span>Grader Breakdown</span>
+        <span style="color:#e2e8f0;font-weight:600">score: {score:.3f}</span>
       </div>
-      <div style="padding:20px">{rows}
-        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);
-                    font-family:var(--mono);font-size:10px;color:var(--text-3)">
+      <div style="padding:16px">
+        {rows}
+        <div style="margin-top:12px;padding-top:10px;border-top:1px solid #21262d;
+                    font-size:10px;color:#6b7280">
           Final score clamped strictly within (0.001, 0.999)
         </div>
       </div>
@@ -765,107 +748,110 @@ def make_score_bars_html(task_key: str) -> str:
 def update_task_info(task_key: str) -> tuple:
     task = TASKS[task_key]
     diff = task["difficulty"]
-    color = DIFF_COLORS[diff]
-    bg = DIFF_BG[diff]
+    colors = {"easy": "#3fb950", "medium": "#e3b341", "hard": "#f97316", "expert": "#f85149"}
+    bgs    = {"easy": "rgba(63,185,80,.15)", "medium": "rgba(227,179,65,.15)",
+              "hard": "rgba(249,115,22,.15)", "expert": "rgba(248,81,73,.15)"}
+    c = colors[diff]; bg = bgs[diff]
     info_html = f"""
-    <div class="section-card">
-      <div class="section-hdr">
-        <span class="title">Selected Task</span>
-        <span class="diff-badge" style="color:{color};background:{bg}">{diff}</span>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span>Selected Task</span>
+        <span style="color:{c};background:{bg};padding:2px 10px;border-radius:5px;font-size:10px;font-weight:600">{diff}</span>
       </div>
-      <div style="padding:18px 20px">
-        <div style="font-family:var(--display);font-size:16px;font-weight:600;color:var(--text-1);margin-bottom:8px">
+      <div style="padding:16px">
+        <div style="font-size:15px;font-weight:600;color:#e2e8f0;margin-bottom:6px">
           {task['label'].split(' — ')[1]}
         </div>
-        <div style="font-size:13px;color:var(--text-2);margin-bottom:14px;line-height:1.7">
+        <div style="font-size:12px;color:#8b949e;margin-bottom:12px;line-height:1.7">
           {task['description']}
         </div>
-        <div style="display:flex;gap:20px;font-family:var(--mono);font-size:10px;color:var(--text-3)">
-          <span>root: <span style="color:var(--text-1)">{task['root']}</span></span>
-          <span>max steps: <span style="color:var(--text-1)">{task['max_steps']}</span></span>
-          <span>optimal: <span style="color:var(--text-1)">{len(task['steps'])}</span></span>
+        <div style="display:flex;gap:20px;font-size:10px;color:#6b7280">
+          <span>root: <span style="color:#e2e8f0">{task['root']}</span></span>
+          <span>max steps: <span style="color:#e2e8f0">{task['max_steps']}</span></span>
+          <span>optimal: <span style="color:#e2e8f0">{len(task['steps'])}</span></span>
         </div>
       </div>
     </div>"""
     return info_html, make_score_bars_html(task_key)
 
 
-def build_task_card_html(key: str, task: dict) -> str:
+def build_task_card(key: str, task: dict) -> str:
     diff = task["difficulty"]
-    color = DIFF_COLORS[diff]
-    bg = DIFF_BG[diff]
+    colors = {"easy": "#3fb950", "medium": "#e3b341", "hard": "#f97316", "expert": "#f85149"}
+    bgs    = {"easy": "rgba(63,185,80,.15)", "medium": "rgba(227,179,65,.15)",
+              "hard": "rgba(249,115,22,.15)", "expert": "rgba(248,81,73,.15)"}
+    c = colors[diff]; bg = bgs[diff]
 
     steps_html = ""
-    for i, (action, reward, _) in enumerate(task["steps"]):
-        rcolor = "#4ade80" if reward > 0 else "#f87171"
+    for i, (action, reward, done) in enumerate(task["steps"]):
+        rc = "#3fb950" if reward > 0 else "#f85149"
         steps_html += f"""
-        <div class="step-item">
-          <div class="step-num" style="border-color:{color}">{i+1}</div>
-          <div class="step-action">{action}</div>
-          <div class="step-reward" style="color:{rcolor}">+{reward:.2f}</div>
+        <div style="display:flex;align-items:center;padding:7px 0;
+                    border-bottom:1px solid #21262d;font-size:11px">
+          <span style="color:#6b7280;min-width:24px">{i+1:02d}</span>
+          <span style="color:#8b949e;flex:1">{action}</span>
+          <span style="color:{rc};font-weight:500">+{reward:.2f}</span>
         </div>"""
 
     return f"""
-    <div class="glow-card" style="margin-bottom:20px">
-      <div class="section-hdr">
-        <span class="title">{key}</span>
-        <span class="diff-badge" style="color:{color};background:{bg}">{diff}</span>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span>{key}</span>
+        <span style="color:{c};background:{bg};padding:2px 10px;border-radius:5px;font-size:10px;font-weight:600">{diff}</span>
       </div>
-      <div style="padding:20px">
-        <div style="font-family:var(--display);font-size:15px;font-weight:600;color:var(--text-1);margin-bottom:6px">
+      <div style="padding:16px">
+        <div style="font-size:14px;font-weight:600;color:#e2e8f0;margin-bottom:6px">
           {task['label'].split(' — ')[1]}
         </div>
-        <div style="font-size:12px;color:var(--text-2);margin-bottom:16px;line-height:1.7">
+        <div style="font-size:12px;color:#8b949e;margin-bottom:12px;line-height:1.7">
           {task['description']}
         </div>
-        <div style="display:flex;gap:20px;font-family:var(--mono);font-size:10px;color:var(--text-3);margin-bottom:16px">
-          <span>root: <span style="color:var(--text-1)">{task['root']}</span></span>
-          <span>max_steps: <span style="color:var(--text-1)">{task['max_steps']}</span></span>
-          <span>benchmark: <span style="color:{color}">{task['score']:.3f}</span></span>
+        <div style="display:flex;gap:20px;font-size:10px;color:#6b7280;margin-bottom:12px">
+          <span>root: <span style="color:#e2e8f0">{task['root']}</span></span>
+          <span>max_steps: <span style="color:#e2e8f0">{task['max_steps']}</span></span>
+          <span>score: <span style="color:{c}">{task['score']:.3f}</span></span>
         </div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--text-3);
-                    text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">
-          Optimal Trace
+        <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">
+          Optimal trace
         </div>
-        <div class="step-flow">{steps_html}</div>
+        {steps_html}
       </div>
     </div>"""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Simulation logic  (unchanged behaviour)
+# Simulation
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_simulation(task_key: str) -> Generator:
-    task = TASKS[task_key]
-    steps = task["steps"]
-    score = task["score"]
-    terminal = ""
+    task   = TASKS[task_key]
+    steps  = task["steps"]
+    score  = task["score"]
+    buf    = ""
 
-    terminal += f"$ python inference.py --task {task_key}\n"
-    yield terminal, make_score_bars_html(task_key)
-    time.sleep(0.3)
+    def _yield():
+        return buf, make_score_bars_html(task_key)
 
-    terminal += f"[START] task={task_key} env=devops_incident_env model={MODEL}\n"
-    yield terminal, make_score_bars_html(task_key)
-    time.sleep(0.25)
+    buf += f"$ python inference.py --task {task_key}\n"
+    yield _yield(); time.sleep(0.3)
+
+    buf += f"[START] task={task_key} env=devops_incident_env model={MODEL}\n"
+    yield _yield(); time.sleep(0.25)
 
     rewards = []
     for i, (action, reward, done) in enumerate(steps, 1):
         time.sleep(0.35 + random.random() * 0.2)
-        done_str = "true" if done else "false"
-        terminal += f"[STEP] step={i} action={action} reward={reward:.2f} done={done_str} error=null\n"
+        buf += f"[STEP] step={i} action={action} reward={reward:.2f} done={'true' if done else 'false'} error=null\n"
         rewards.append(reward)
-        yield terminal, make_score_bars_html(task_key)
+        yield _yield()
 
     time.sleep(0.35)
-    reward_str = ",".join(f"{r:.2f}" for r in rewards)
-    terminal += f"[END] success=true steps={len(steps)} rewards={reward_str}\n"
-    yield terminal, make_score_bars_html(task_key)
+    buf += f"[END] success=true steps={len(steps)} rewards={','.join(f'{r:.2f}' for r in rewards)}\n"
+    yield _yield()
 
     time.sleep(0.25)
-    terminal += f"grader score: {score:.3f}\n"
-    yield terminal, make_score_bars_html(task_key)
+    buf += f"grader score: {score:.3f}\n"
+    yield _yield()
 
 
 def clear_terminal(task_key: str) -> tuple:
@@ -873,63 +859,60 @@ def clear_terminal(task_key: str) -> tuple:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Build Gradio app   (variable MUST be named `app`)
+# Gradio app  –  variable MUST be named `app`
 # ─────────────────────────────────────────────────────────────────────────────
 
 with gr.Blocks(css=CSS, title="DevOps Incident Response — OpenEnv") as app:
 
-    # ── Nav + Hero + Stats ──
     gr.HTML(NAV_HTML)
     gr.HTML(HERO_HTML)
-    gr.HTML(STATS_HTML)
+    gr.HTML(STAT_GRID_HTML)
 
     with gr.Tabs():
 
-        # ══ Tab 1: Simulation ═══════════════════════════════════════════════
+        # ══ Simulation ═══════════════════════════════════════════════════════
         with gr.Tab("Simulation"):
+
             with gr.Row():
-                task_dropdown = gr.Dropdown(
+                task_dd = gr.Dropdown(
                     choices=[(v["label"], k) for k, v in TASKS.items()],
                     value="easy_task",
-                    label="Select task",
-                    scale=3,
+                    label="", scale=3,
                 )
-                run_btn = gr.Button("Run simulation", variant="primary", scale=1)
-                clear_btn = gr.Button("Clear", variant="secondary", scale=1)
+                run_btn   = gr.Button("Run simulation", variant="primary", scale=1)
+                clear_btn = gr.Button("Clear",          variant="secondary", scale=1)
 
-            task_info_html = gr.HTML(update_task_info("easy_task")[0])
+            task_info = gr.HTML(update_task_info("easy_task")[0])
 
-            terminal_out = gr.Textbox(
+            # Terminal window: header + textbox
+            gr.HTML(TERM_HEADER_HTML)
+            terminal = gr.Textbox(
                 value="$ python inference.py  # select a task and click Run\n",
-                label="Terminal output",
-                lines=14, max_lines=14,
-                interactive=False,
-                elem_id="terminal-output",
+                lines=14, max_lines=14, interactive=False,
+                elem_id="terminal-output", label="",
             )
 
-            score_bars_html = gr.HTML(make_score_bars_html("easy_task"))
+            score_html = gr.HTML(make_score_bars_html("easy_task"))
 
-            task_dropdown.change(fn=update_task_info, inputs=task_dropdown,
-                                outputs=[task_info_html, score_bars_html])
-            run_btn.click(fn=run_simulation, inputs=task_dropdown,
-                          outputs=[terminal_out, score_bars_html])
-            clear_btn.click(fn=clear_terminal, inputs=task_dropdown,
-                            outputs=[terminal_out, score_bars_html])
+            task_dd.change(fn=update_task_info, inputs=task_dd, outputs=[task_info, score_html])
+            run_btn.click(fn=run_simulation, inputs=task_dd, outputs=[terminal, score_html])
+            clear_btn.click(fn=clear_terminal, inputs=task_dd, outputs=[terminal, score_html])
 
-        # ══ Tab 2: Environment ══════════════════════════════════════════════
+        # ══ Environment ══════════════════════════════════════════════════════
         with gr.Tab("Environment"):
             with gr.Row():
                 with gr.Column():
-                    gr.HTML(DEP_GRAPH_HTML)
+                    gr.HTML(TASK_LIST_HTML)
                     gr.HTML(REWARD_HTML)
                 with gr.Column():
-                    gr.HTML(ROUTES_HTML)
-                    gr.HTML(ACTIONS_HTML)
+                    gr.HTML(DEP_GRAPH_HTML)
+                    gr.HTML(GRADER_HTML)
+            gr.HTML(ROUTES_HTML)
 
-        # ══ Tab 3: Tasks ════════════════════════════════════════════════════
+        # ══ Tasks ════════════════════════════════════════════════════════════
         with gr.Tab("Tasks"):
             for key, task in TASKS.items():
-                gr.HTML(build_task_card_html(key, task))
+                gr.HTML(build_task_card(key, task))
 
     gr.HTML(FOOTER_HTML)
 
